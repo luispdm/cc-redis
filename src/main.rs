@@ -25,17 +25,9 @@ enum ClientError {
 }
 
 fn main() {
-    // println!("test... {:?}", deserialize_msg(b"*1\r\n$4\r\nabcd\r\n"));
-    println!(
-        "test2.. {:?}",
-        deserialize_msg(b"*2\r\n$4\r\necho\r\n$11\r\nhello world\r\n")
-    );
-    // print!("$ represents a... ");
-    // let _ = deserialize_msg(b"$");
-    // print!("* represents a... ");
-    // let _ = deserialize_msg(b"*");
-    // print!("+ represents a... ");
-    // println!("A represents a... {:?}", deserialize_msg(b"A"));
+    Deserializer::default().deserialize_msg(b"*1\r\n$4\r\nping\r\n");
+    Deserializer::default().deserialize_msg(b"*2\r\n$4\r\necho\r\n$11\r\nhello world\r\n");
+    Deserializer::default().deserialize_msg(b"*2\r\n$3\r\nget\r\n$3\r\nkey\r\n");
 }
 
 // #[tokio::main]
@@ -67,81 +59,94 @@ fn main() {
 //     }
 // }
 
-fn deserialize_msg(msg: &[u8]) -> Result<(), ClientError> {
-    println!("msg is: {:?}", msg);
-    println!("msg.len() is: {}", msg.len());
-    let mut cursor = 0;
-    if msg.get(cursor).is_none_or(|c| *c != ARRAY_TYPE) {
-        return Err(ClientError::InvalidStartOfMsg);
-    }
-    // advance to the first CRLF to find out how many elements the array has
-    cursor += 1;
-    let (mut cr_pos, mut lf_pos) =
-        get_cr_lf_positions(msg, cursor).ok_or(ClientError::MalformedArray)?;
-    println!("cr_pos: {}, lf_pos: {}", cr_pos, lf_pos);
-    let array_size = get_u32_from_string(&msg[cursor..cr_pos]).map_err(|_| ClientError::MalformedArray)?;
-    println!("iterations to run: {}", array_size);
-    // extract the bulk strings
-    for _ in 0..array_size {
-        cursor = lf_pos + 1;
-        if msg.get(cursor).is_none() {
+#[derive(Debug, Error)]
+#[error("\r\n not found")]
+struct CrLfNotFound;
+
+#[derive(Default)]
+struct Deserializer {
+    cursor: usize,
+    cr_pos: usize,
+    lf_pos: usize,
+}
+
+impl Deserializer {
+    fn deserialize_msg(&mut self, msg: &[u8]) -> Result<(), ClientError> {
+        println!("msg is: {:?}", msg);
+        println!("msg.len() is: {}", msg.len());
+        if msg.get(self.cursor).is_none_or(|c| *c != ARRAY_TYPE) {
+            return Err(ClientError::InvalidStartOfMsg);
+        }
+        // advance to the first CRLF to find out how many elements the array has
+        self.cursor += 1;
+        self.update_cr_lf(msg).map_err(|_| ClientError::MalformedArray)?;
+        println!("cr_pos: {}, lf_pos: {}", self.cr_pos, self.lf_pos);
+        let array_size = get_u32_from_string(&msg[self.cursor..self.cr_pos]).map_err(|_| ClientError::MalformedArray)?;
+        println!("iterations to run: {}", array_size);
+        // extract the bulk strings
+        for _ in 0..array_size {
+            self.cursor = self.lf_pos + 1;
+            if msg.get(self.cursor).is_none() {
+                return Err(ClientError::MalformedArray); // TODO MalformedBulkString? Debatable
+            }
+            if msg[self.cursor] != BULK_STRING_TYPE {
+                return Err(ClientError::BulkStringExpected);
+            }
+            // get the bulk string size
+            self.cursor += 1;
+            self.update_cr_lf(msg).map_err(|_| ClientError::MalformedBulkString)?;
+            println!("cursor: {}, cr_pos: {}, lf_pos: {}", self.cursor, self.cr_pos, self.lf_pos);
+            let bulk_string_size = get_u32_from_string(&msg[self.cursor..self.cr_pos]).map_err(|_| ClientError::MalformedBulkString)?;
+            println!("bulk_string_size: {}", bulk_string_size);
+            // extract the bulk string data (make sure it's consistent with the size)
+            self.cursor = self.lf_pos + 1;
+            if msg.get(self.cursor).is_none() || msg[self.cursor..].len() < bulk_string_size as usize {
+                return Err(ClientError::MalformedBulkString);
+            }
+            let bulk_string = &msg[self.cursor..self.cursor + bulk_string_size as usize];
+            println!("cursor: {}", self.cursor);
+            println!(
+                "bulk_string: {:?}",
+                str::from_utf8(bulk_string).map_err(|_| ClientError::MalformedBulkString)?
+            );
+            // advance to the next CRLF
+            self.cursor += bulk_string_size as usize;
+            println!("cursor: {}", self.cursor);
+            if msg.get(self.cursor).is_none_or(|c| *c != CR) {
+                return Err(ClientError::MalformedBulkString);
+            }
+            self.cursor += 1;
+            if msg.get(self.cursor).is_none_or(|c| *c != LF) {
+                return Err(ClientError::MalformedBulkString);
+            }
+            self.lf_pos = self.cursor;
+            println!("cursor: {}", self.cursor);
+        }
+        // make sure there's nothing else after the last CRLF
+        self.cursor += 1;
+        println!("cursor: {}", self.cursor);
+        if msg.get(self.cursor).is_some() {
             return Err(ClientError::MalformedArray);
         }
-        if msg[cursor] != BULK_STRING_TYPE {
-            return Err(ClientError::BulkStringExpected);
-        }
-        // get the bulk string size
-        cursor += 1;
-        (cr_pos, lf_pos) = get_cr_lf_positions(msg, cursor).ok_or(ClientError::MalformedBulkString)?;
-        println!("cursor: {}, cr_pos: {}, lf_pos: {}", cursor, cr_pos, lf_pos);
-        let bulk_string_size = get_u32_from_string(&msg[cursor..cr_pos]).map_err(|_| ClientError::MalformedArray)?;
-        println!("bulk_string_size: {}", bulk_string_size);
-        // extract the bulk string data (make sure it's consistent with the size)
-        cursor = lf_pos + 1;
-        if msg.get(cursor).is_none() || msg[cursor..].len() < bulk_string_size as usize {
-            return Err(ClientError::MalformedBulkString);
-        }
-        let bulk_string = &msg[cursor..cursor + bulk_string_size as usize];
-        println!("cursor: {}", cursor);
-        println!(
-            "bulk_string: {:?}",
-            str::from_utf8(bulk_string).map_err(|_| ClientError::MalformedBulkString)?
-        );
-        // advance to the next CRLF
-        cursor += bulk_string_size as usize;
-        println!("cursor: {}", cursor);
-        if msg.get(cursor).is_none_or(|c| *c != CR) {
-            return Err(ClientError::MalformedBulkString);
-        }
-        cursor += 1;
-        if msg.get(cursor).is_none_or(|c| *c != LF) {
-            return Err(ClientError::MalformedBulkString);
-        }
-        lf_pos = cursor;
-        println!("cursor: {}", cursor);
+        Ok(())
     }
-    // make sure there's nothing else after the last CRLF
-    cursor += 1;
-    println!("cursor: {}", cursor);
-    if msg.get(cursor).is_some() {
-        return Err(ClientError::MalformedArray);
+
+    fn update_cr_lf(&mut self, msg: &[u8]) -> Result<(), CrLfNotFound> {
+        let mut cursor = self.cursor;
+        while cursor < msg.len() - 1 {
+            if msg[cursor] == CR && msg[cursor + 1] == LF {
+                self.cr_pos = cursor;
+                self.lf_pos = cursor + 1;
+                return Ok(());
+            }
+            cursor += 1;
+        }
+        Err(CrLfNotFound)
     }
-    Ok(())
 }
 
 fn get_u32_from_string(s: &[u8]) -> Result<u32, ParseIntError> {
     str::from_utf8(s)
         .unwrap_or_default()
         .parse::<u32>()
-}
-
-fn get_cr_lf_positions(msg: &[u8], cursor: usize) -> Option<(usize, usize)> {
-    let mut cursor = cursor;
-    while cursor < msg.len() - 1 {
-        if msg[cursor] == CR && msg[cursor + 1] == LF {
-            return Some((cursor, cursor + 1));
-        }
-        cursor += 1;
-    }
-    None
 }

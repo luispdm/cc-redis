@@ -1,4 +1,4 @@
-use std::str;
+use std::{num::ParseIntError, str};
 
 use bytes::BytesMut;
 use thiserror::Error;
@@ -18,8 +18,6 @@ enum ClientError {
     InvalidStartOfMsg,
     #[error("invalid array")]
     MalformedArray,
-    #[error("invalid array size")]
-    InvalidArraySize,
     #[error("bulk string expected")]
     BulkStringExpected,
     #[error("malformed bulk string")]
@@ -81,11 +79,10 @@ fn deserialize_msg(msg: &[u8]) -> Result<(), ClientError> {
     let (mut cr_pos, mut lf_pos) =
         get_cr_lf_positions(msg, cursor).ok_or(ClientError::MalformedArray)?;
     println!("cr_pos: {}, lf_pos: {}", cr_pos, lf_pos);
-    let array_size = get_number_from_string(&msg[cursor..cr_pos])?;
+    let array_size = get_u32_from_string(&msg[cursor..cr_pos]).map_err(|_| ClientError::MalformedArray)?;
     println!("iterations to run: {}", array_size);
-    let mut iterations = 0u32;
     // extract the bulk strings
-    while iterations < array_size {
+    for _ in 0..array_size {
         cursor = lf_pos + 1;
         if msg.get(cursor).is_none() {
             return Err(ClientError::MalformedArray);
@@ -97,7 +94,7 @@ fn deserialize_msg(msg: &[u8]) -> Result<(), ClientError> {
         cursor += 1;
         (cr_pos, lf_pos) = get_cr_lf_positions(msg, cursor).ok_or(ClientError::MalformedBulkString)?;
         println!("cursor: {}, cr_pos: {}, lf_pos: {}", cursor, cr_pos, lf_pos);
-        let bulk_string_size = get_number_from_string(&msg[cursor..cr_pos])?;
+        let bulk_string_size = get_u32_from_string(&msg[cursor..cr_pos]).map_err(|_| ClientError::MalformedArray)?;
         println!("bulk_string_size: {}", bulk_string_size);
         // extract the bulk string data (make sure it's consistent with the size)
         cursor = lf_pos + 1;
@@ -113,7 +110,6 @@ fn deserialize_msg(msg: &[u8]) -> Result<(), ClientError> {
         // advance to the next CRLF
         cursor += bulk_string_size as usize;
         println!("cursor: {}", cursor);
-        // check for CRLF after the bulk string
         if msg.get(cursor).is_none_or(|c| *c != CR) {
             return Err(ClientError::MalformedBulkString);
         }
@@ -122,12 +118,7 @@ fn deserialize_msg(msg: &[u8]) -> Result<(), ClientError> {
             return Err(ClientError::MalformedBulkString);
         }
         lf_pos = cursor;
-        iterations += 1;
         println!("cursor: {}", cursor);
-    }
-    // TODO create a test that returns this error
-    if iterations != array_size {
-        return Err(ClientError::InvalidArraySize);
     }
     // make sure there's nothing else after the last CRLF
     cursor += 1;
@@ -138,11 +129,10 @@ fn deserialize_msg(msg: &[u8]) -> Result<(), ClientError> {
     Ok(())
 }
 
-fn get_number_from_string(s: &[u8]) -> Result<u32, ClientError> {
+fn get_u32_from_string(s: &[u8]) -> Result<u32, ParseIntError> {
     str::from_utf8(s)
         .unwrap_or_default()
         .parse::<u32>()
-        .map_err(|_| ClientError::MalformedArray)
 }
 
 fn get_cr_lf_positions(msg: &[u8], cursor: usize) -> Option<(usize, usize)> {

@@ -27,6 +27,7 @@ enum ClientError {
 fn main() {
     Deserializer::default().deserialize_msg(b"*1\r\n$4\r\nping\r\n");
     Deserializer::default().deserialize_msg(b"*2\r\n$4\r\necho\r\n$11\r\nhello world\r\n");
+    Deserializer::default().deserialize_msg("*2\r\n$4\r\necho\r\n$4\r\n💸\r\n".as_bytes());
     Deserializer::default().deserialize_msg(b"*2\r\n$3\r\nget\r\n$3\r\nkey\r\n");
 }
 

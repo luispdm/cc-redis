@@ -28,41 +28,41 @@ enum ClientError {
     MalformedBulkString,
 }
 
-fn main() {
-    Deserializer::default().deserialize_msg(b"*1\r\n$4\r\nping\r\n");
-    Deserializer::default().deserialize_msg(b"*2\r\n$4\r\necho\r\n$11\r\nhello world\r\n");
-    Deserializer::default().deserialize_msg("*2\r\n$4\r\necho\r\n$4\r\n💸\r\n".as_bytes());
-    Deserializer::default().deserialize_msg(b"*2\r\n$3\r\nget\r\n$3\r\nkey\r\n");
+#[tokio::main]
+async fn main() -> io::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:6379").await?;
+    loop {
+        let (mut stream, _) = listener.accept().await?;
+        tokio::spawn(async move {
+            let (mut reader, mut writer) = stream.split();
+            let mut buf = BytesMut::with_capacity(4096);
+            loop {
+                match reader.read_buf(&mut buf).await {
+                    Ok(0) => {
+                        println!("0 bytes received");
+                        break;
+                    }
+                    Ok(n) => {
+                        println!("Received {:?}", String::from_utf8(buf[..n].to_vec()));
+                        println!(
+                            "Deserialized {:?}",
+                            Deserializer::default().deserialize_msg(&buf[..n])
+                        );
+                        writer
+                            .write_all(&ReplyCmd::SimpleString("OK".to_owned()).serialize())
+                            .await
+                            .unwrap();
+                        writer.flush().await.unwrap();
+                    }
+                    Err(e) => {
+                        println!("Failed to read from socket: {:?}", e);
+                        break;
+                    }
+                }
+            }
+        });
+    }
 }
-
-// #[tokio::main]
-// async fn main() -> io::Result<()> {
-//     let listener = TcpListener::bind("127.0.0.1:6379").await?;
-//     loop {
-//         let (mut stream, _) = listener.accept().await?;
-//         tokio::spawn(async move {
-//             let (mut reader, mut writer) = stream.split();
-//             let mut buf = BytesMut::with_capacity(4096);
-//             // loop {
-//                 match reader.read_buf(&mut buf).await {
-//                     Ok(0) => {
-//                         println!("0 bytes received");
-//                         // break;
-//                     }
-//                     Ok(n) => {
-//                         println!("Received {:?}", String::from_utf8(buf[..n].to_vec()));
-//                         writer.write_all(&buf).await.unwrap();
-//                         writer.flush().await.unwrap();
-//                     }
-//                     Err(e) => {
-//                         println!("Failed to read from socket: {:?}", e);
-//                         // break;
-//                     }
-//                 }
-//             // }
-//         });
-//     }
-// }
 
 enum ReplyCmd {
     Null,

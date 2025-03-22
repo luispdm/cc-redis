@@ -9,6 +9,10 @@ use tokio::{
 
 const ARRAY_TYPE: u8 = b'*';
 const BULK_STRING_TYPE: u8 = b'$';
+const ERROR_TYPE: u8 = b'-';
+const INTEGER_TYPE: u8 = b':';
+const NULL_TYPE: u8 = b'_';
+const SIMPLE_STRING_TYPE: u8 = b'+';
 const CR: u8 = b'\r';
 const LF: u8 = b'\n';
 
@@ -60,6 +64,114 @@ fn main() {
 //     }
 // }
 
+enum ReplyCmd {
+    Null,
+    SimpleString(String),
+    BulkString(String),
+    Integer(String),
+    SimpleError(String),
+}
+
+impl ReplyCmd {
+    fn serialize(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+        match self {
+            ReplyCmd::Null => {
+                bytes.push(NULL_TYPE);
+                bytes.push(CR);
+                bytes.push(LF);
+            }
+            ReplyCmd::SimpleString(s) => {
+                bytes.push(SIMPLE_STRING_TYPE);
+                bytes.extend_from_slice(s.as_bytes());
+                bytes.push(CR);
+                bytes.push(LF);
+            }
+            ReplyCmd::Integer(s) => {
+                bytes.push(INTEGER_TYPE);
+                bytes.extend_from_slice(s.as_bytes());
+                bytes.push(CR);
+                bytes.push(LF);
+            }
+            ReplyCmd::SimpleError(s) => {
+                bytes.push(ERROR_TYPE);
+                bytes.extend_from_slice(s.as_bytes());
+                bytes.push(CR);
+                bytes.push(LF);
+            }
+            ReplyCmd::BulkString(s) => {
+                bytes.push(BULK_STRING_TYPE);
+                bytes.extend_from_slice(s.len().to_string().as_bytes());
+                bytes.push(CR);
+                bytes.push(LF);
+                bytes.extend_from_slice(s.as_bytes());
+                bytes.push(CR);
+                bytes.push(LF);
+            }
+        }
+        bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_serialize_null() {
+        let reply = ReplyCmd::Null;
+        assert_eq!(reply.serialize(), b"_\r\n");
+    }
+
+    #[test]
+    fn test_serialize_simple_string() {
+        let reply = ReplyCmd::SimpleString("".to_string());
+        assert_eq!(reply.serialize(), b"+\r\n");
+
+        let reply = ReplyCmd::SimpleString("OK".to_string());
+        assert_eq!(reply.serialize(), b"+OK\r\n");
+
+        let reply = ReplyCmd::SimpleString("Hello World".to_string());
+        assert_eq!(reply.serialize(), b"+Hello World\r\n");
+
+        let reply = ReplyCmd::SimpleString("こんにちは".to_string());
+        assert_eq!(reply.serialize(), "+こんにちは\r\n".as_bytes());
+    }
+
+    #[test]
+    fn test_serialize_integer() {
+        let reply = ReplyCmd::Integer("0".to_string());
+        assert_eq!(reply.serialize(), b":0\r\n");
+
+        let reply = ReplyCmd::Integer("42".to_string());
+        assert_eq!(reply.serialize(), b":42\r\n");
+
+        let reply = ReplyCmd::Integer("-1".to_string());
+        assert_eq!(reply.serialize(), b":-1\r\n");
+    }
+
+    #[test]
+    fn test_serialize_simple_error() {
+        let reply = ReplyCmd::SimpleError("Error".to_string());
+        assert_eq!(reply.serialize(), b"-Error\r\n");
+
+        let reply = ReplyCmd::SimpleError("ERR unknown command".to_string());
+        assert_eq!(reply.serialize(), b"-ERR unknown command\r\n");
+    }
+
+    #[test]
+    fn test_serialize_bulk_string() {
+        let reply = ReplyCmd::BulkString("".to_string());
+        assert_eq!(reply.serialize(), b"$0\r\n\r\n");
+
+        let reply = ReplyCmd::BulkString("hello world".to_string());
+        assert_eq!(reply.serialize(), b"$11\r\nhello world\r\n");
+
+        let reply = ReplyCmd::BulkString("💸".to_string());
+        assert_eq!(reply.serialize(), b"$4\r\n\xF0\x9F\x92\xB8\r\n");
+    }
+}
+
 #[derive(Debug, Error)]
 #[error("\r\n not found")]
 struct CrLfNotFound;
@@ -80,9 +192,11 @@ impl Deserializer {
         }
         // advance to the first CRLF to find out how many elements the array has
         self.cursor += 1;
-        self.update_cr_lf(msg).map_err(|_| ClientError::MalformedArray)?;
+        self.update_cr_lf(msg)
+            .map_err(|_| ClientError::MalformedArray)?;
         println!("cr_pos: {}, lf_pos: {}", self.cr_pos, self.lf_pos);
-        let array_size = get_u32_from_string(&msg[self.cursor..self.cr_pos]).map_err(|_| ClientError::MalformedArray)?;
+        let array_size = get_u32_from_string(&msg[self.cursor..self.cr_pos])
+            .map_err(|_| ClientError::MalformedArray)?;
         println!("iterations to run: {}", array_size);
         // extract the bulk strings
         for _ in 0..array_size {
@@ -95,13 +209,20 @@ impl Deserializer {
             }
             // get the bulk string size
             self.cursor += 1;
-            self.update_cr_lf(msg).map_err(|_| ClientError::MalformedBulkString)?;
-            println!("cursor: {}, cr_pos: {}, lf_pos: {}", self.cursor, self.cr_pos, self.lf_pos);
-            let bulk_string_size = get_u32_from_string(&msg[self.cursor..self.cr_pos]).map_err(|_| ClientError::MalformedBulkString)?;
+            self.update_cr_lf(msg)
+                .map_err(|_| ClientError::MalformedBulkString)?;
+            println!(
+                "cursor: {}, cr_pos: {}, lf_pos: {}",
+                self.cursor, self.cr_pos, self.lf_pos
+            );
+            let bulk_string_size = get_u32_from_string(&msg[self.cursor..self.cr_pos])
+                .map_err(|_| ClientError::MalformedBulkString)?;
             println!("bulk_string_size: {}", bulk_string_size);
             // extract the bulk string data (make sure it's consistent with the size)
             self.cursor = self.lf_pos + 1;
-            if msg.get(self.cursor).is_none() || msg[self.cursor..].len() < bulk_string_size as usize {
+            if msg.get(self.cursor).is_none()
+                || msg[self.cursor..].len() < bulk_string_size as usize
+            {
                 return Err(ClientError::MalformedBulkString);
             }
             let bulk_string = &msg[self.cursor..self.cursor + bulk_string_size as usize];
@@ -147,7 +268,5 @@ impl Deserializer {
 }
 
 fn get_u32_from_string(s: &[u8]) -> Result<u32, ParseIntError> {
-    str::from_utf8(s)
-        .unwrap_or_default()
-        .parse::<u32>()
+    str::from_utf8(s).unwrap_or_default().parse::<u32>()
 }

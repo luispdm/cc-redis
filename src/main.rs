@@ -217,13 +217,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_serialize_null() {
+    fn serialize_null() {
         let reply = ReplyCmd::Null;
         assert_eq!(reply.serialize(), b"_\r\n");
     }
 
     #[test]
-    fn test_serialize_simple_string() {
+    fn serialize_simple_string() {
         let reply = ReplyCmd::SimpleString("".to_string());
         assert_eq!(reply.serialize(), b"+\r\n");
 
@@ -238,7 +238,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serialize_integer() {
+    fn serialize_integer() {
         let reply = ReplyCmd::Integer("0".to_string());
         assert_eq!(reply.serialize(), b":0\r\n");
 
@@ -250,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serialize_simple_error() {
+    fn serialize_simple_error() {
         let reply = ReplyCmd::SimpleError("Error".to_string());
         assert_eq!(reply.serialize(), b"-Error\r\n");
 
@@ -259,7 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serialize_bulk_string() {
+    fn serialize_bulk_string() {
         let reply = ReplyCmd::BulkString("".to_string());
         assert_eq!(reply.serialize(), b"$0\r\n\r\n");
 
@@ -271,15 +271,15 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_valid_array() {        
+    fn deserialize_valid_array() {
         let msg = b"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n";
         let mut deserializer = Deserializer::default();
         assert!(deserializer.deserialize_msg(msg).is_ok());
-        
+
         let msg = b"*1\r\n$0\r\n\r\n";
         let mut deserializer = Deserializer::default();
         assert!(deserializer.deserialize_msg(msg).is_ok());
-        
+
         // unicode for: "💸"
         let msg = b"*1\r\n$4\r\n\xF0\x9F\x92\xB8\r\n";
         let mut deserializer = Deserializer::default();
@@ -287,14 +287,14 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_invalid_start() {
+    fn deserialize_invalid_start() {
         let msg = b"$3\r\nGET\r\n";
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
             ClientError::InvalidStartOfMsg
         ));
-        
+
         let msg = b"";
         let mut deserializer = Deserializer::default();
         assert!(matches!(
@@ -303,34 +303,28 @@ mod tests {
         ));
     }
 
-    // TODO split into multiple tests
     #[test]
-    fn test_deserialize_malformed_array() {
-        // missing CRLF after array size
-        let msg = b"*1$4\r\nPING\r\n";
-        let mut deserializer = Deserializer::default();
-        assert!(matches!(
-            deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::MalformedArray
-        ));
-        
-        // invalid array size ("x")
+    fn deserialize_invalid_array_size() {
         let msg = b"*x\r\n$4\r\nPING\r\n";
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
             ClientError::MalformedArray
         ));
-        
-        // declared array size bigger than number of elements
+    }
+
+    #[test]
+    fn deserialize_array_size_bigger() {
         let msg = b"*2\r\n$4\r\nPING\r\n";
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
             ClientError::MalformedArray
         ));
+    }
 
-        // declared array size smaller than number of elements
+    #[test]
+    fn deserialize_array_size_smaller() {
         let msg = b"*1\r\n$4\r\nECHO\r\n$5\r\nworld\r\n";
         let mut deserializer = Deserializer::default();
         assert!(matches!(
@@ -340,8 +334,17 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_bulk_string_expected() {
-        // non-existing type instead of bulk string
+    fn deserialize_array_size_missing_terminator() {
+        let msg = b"*1$4\r\nPING\r\n";
+        let mut deserializer = Deserializer::default();
+        assert!(matches!(
+            deserializer.deserialize_msg(msg).unwrap_err(),
+            ClientError::MalformedArray
+        ));
+    }
+
+    #[test]
+    fn deserialize_bulk_string_expected() {
         let msg = b"*1\r\n[123\r\n";
         let mut deserializer = Deserializer::default();
         assert!(matches!(
@@ -351,40 +354,37 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_malformed_bulk_string() {
-        // missing CRLF after bulk string size
-        let msg = b"*1\r\n$4PING\r\n";
-        let mut deserializer = Deserializer::default();
-        assert!(matches!(
-            deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::MalformedBulkString
-        ));
-        
-        // invalid bulk string size ("x")
+    fn deserialize_invalid_bulk_string_size() {
         let msg = b"*1\r\n$x\r\nPING\r\n";
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
             ClientError::MalformedBulkString
         ));
-        
-        // declared bulk string size bigger than data
+    }
+
+    #[test]
+    fn deserialize_bulk_string_size_bigger() {
         let msg = b"*1\r\n$10\r\nPING\r\n";
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
             ClientError::MalformedBulkString
         ));
+    }
 
-        // declared bulk string size smaller than data
+    #[test]
+    fn deserialize_bulk_string_size_smaller() {
         let msg = b"*1\r\n$1\r\nPING\r\n";
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
             ClientError::MalformedBulkString
         ));
-        
-        // missing CRLF after bulk string data
+    }
+
+    #[test]
+    fn deserialize_bulk_string_missing_terminator() {
         let msg = b"*1\r\n$4\r\nPING";
         let mut deserializer = Deserializer::default();
         assert!(matches!(
@@ -394,7 +394,17 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_trailing_data() {
+    fn deserialize_bulk_string_size_missing_terminator() {
+        let msg = b"*1\r\n$4PING\r\n";
+        let mut deserializer = Deserializer::default();
+        assert!(matches!(
+            deserializer.deserialize_msg(msg).unwrap_err(),
+            ClientError::MalformedBulkString
+        ));
+    }
+
+    #[test]
+    fn deserialize_trailing_data() {
         let msg = b"*1\r\n$4\r\nPING\r\nEXTRA";
         let mut deserializer = Deserializer::default();
         assert!(matches!(

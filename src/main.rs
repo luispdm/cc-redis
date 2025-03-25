@@ -125,7 +125,7 @@ struct Deserializer {
 }
 
 impl Deserializer {
-    fn deserialize_msg(&mut self, msg: &[u8]) -> Result<(), ClientError> {
+    fn deserialize_msg(&mut self, msg: &[u8]) -> Result<Vec<String>, ClientError> {
         if msg.get(self.cursor).is_none_or(|c| *c != ARRAY_TYPE) {
             return Err(ClientError::InvalidStartOfMsg);
         }
@@ -154,7 +154,7 @@ impl Deserializer {
             return Err(ClientError::MalformedArray);
         }
 
-        Ok(())
+        Ok(params)
     }
 
     fn check_bulk_string_type(&mut self, msg: &[u8]) -> Result<(), ClientError> {
@@ -282,17 +282,19 @@ mod tests {
     #[test]
     fn deserialize_ok() {
         let msg = b"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n";
+        let expected_params = vec!["SET", "key", "value"];
         let mut deserializer = Deserializer::default();
-        assert!(deserializer.deserialize_msg(msg).is_ok());
+        assert_eq!(expected_params, deserializer.deserialize_msg(msg).unwrap());
 
         let msg = b"*1\r\n$0\r\n\r\n";
+        let expected_params = vec![""];
         let mut deserializer = Deserializer::default();
-        assert!(deserializer.deserialize_msg(msg).is_ok());
+        assert_eq!(expected_params, deserializer.deserialize_msg(msg).unwrap());
 
-        // unicode for: "💸"
         let msg = b"*1\r\n$4\r\n\xF0\x9F\x92\xB8\r\n";
+        let expected_params = vec!["💸"];
         let mut deserializer = Deserializer::default();
-        assert!(deserializer.deserialize_msg(msg).is_ok());
+        assert_eq!(expected_params, deserializer.deserialize_msg(msg).unwrap());
     }
 
     #[test]

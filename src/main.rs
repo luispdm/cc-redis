@@ -69,18 +69,14 @@ async fn main() -> io::Result<()> {
 
 enum RequestCmd {
     Ping(Option<String>),
+    Echo(String),
 }
 
 impl RequestCmd {
     fn execute(self) -> ReplyCmd {
         match self {
-            Self::Ping(val) => {
-                if let Some(msg) = val {
-                    ReplyCmd::BulkString(msg.to_string())
-                } else {
-                    ReplyCmd::SimpleString("PONG".to_string())
-                }
-            }
+            Self::Ping(val) => val.map_or(ReplyCmd::SimpleString("PONG".to_string()), ReplyCmd::BulkString),
+            Self::Echo(val) => ReplyCmd::BulkString(val)
         }
     }
 }
@@ -99,6 +95,13 @@ impl TryFrom<Vec<String>> for RequestCmd {
                     Err(ClientError::WrongNumberOfArguments("ping".to_string()))
                 } else {
                     Ok(RequestCmd::Ping(params.get(1).cloned()))
+                }
+            }
+            "echo" => {
+                if params.len() != 2 {
+                    Err(ClientError::WrongNumberOfArguments("echo".to_string()))
+                } else {
+                    Ok(RequestCmd::Echo(params[1].to_owned()))
                 }
             }
             c => Err(ClientError::UnknownCommand(c.to_string())),

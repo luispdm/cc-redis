@@ -16,18 +16,6 @@ const SIMPLE_STRING_TYPE: u8 = b'+';
 const CR: u8 = b'\r';
 const LF: u8 = b'\n';
 
-#[derive(Debug, Error)]
-enum ClientError {
-    #[error("message must be an array")]
-    InvalidStartOfMsg,
-    #[error("invalid array")]
-    MalformedArray,
-    #[error("bulk string expected")]
-    BulkStringExpected,
-    #[error("malformed bulk string")]
-    MalformedBulkString,
-}
-
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:6379").await?;
@@ -36,23 +24,34 @@ async fn main() -> io::Result<()> {
         tokio::spawn(async move {
             let (mut reader, mut writer) = stream.split();
             let mut buf = BytesMut::with_capacity(4096);
+            let mut cursor = 0;
             loop {
                 match reader.read_buf(&mut buf).await {
                     Ok(0) => {
-                        println!("0 bytes received");
                         break;
                     }
                     Ok(n) => {
-                        println!("Received {:?}", String::from_utf8(buf[..n].to_vec()));
                         println!(
-                            "Deserialized {:?}",
-                            Deserializer::default().deserialize_msg(&buf[..n])
+                            "Received {:?}",
+                            String::from_utf8(buf[cursor..cursor + n].to_vec())
                         );
-                        writer
-                            .write_all(&ReplyCmd::SimpleString("OK".to_owned()).serialize())
-                            .await
-                            .unwrap();
+                        let reply = {
+                            Deserializer::default()
+                                .deserialize_msg(&buf[cursor..cursor + n])
+                                .map_err(|e| ReplyCmd::SimpleError(e.to_string()))
+                                .map(|des| {
+                                    println!("Deserialized {:?}", des);
+                                    match RequestCmd::try_from(des) {
+                                        Ok(cmd) => cmd.execute(),
+                                        Err(e) => ReplyCmd::SimpleError(e.to_string()),
+                                    }
+                                })
+                                .unwrap()
+                        };
+
+                        writer.write_all(&reply.serialize()).await.unwrap();
                         writer.flush().await.unwrap();
+                        cursor += n;
                     }
                     Err(e) => {
                         println!("Failed to read from socket: {:?}", e);
@@ -64,6 +63,54 @@ async fn main() -> io::Result<()> {
     }
 }
 
+enum RequestCmd {
+    Ping(Option<String>),
+}
+
+impl RequestCmd {
+    fn execute(self) -> ReplyCmd {
+        match self {
+            Self::Ping(val) => {
+                if let Some(msg) = val {
+                    ReplyCmd::BulkString(msg.to_string())
+                } else {
+                    ReplyCmd::SimpleString("PONG".to_string())
+                }
+            }
+        }
+    }
+}
+
+impl TryFrom<Vec<String>> for RequestCmd {
+    type Error = ClientError;
+
+    fn try_from(params: Vec<String>) -> Result<Self, Self::Error> {
+        if params.is_empty() {
+            return Err(ClientError::UnknownCommand("".to_string()));
+        }
+
+        match params[0].to_lowercase().as_str() {
+            "ping" => {
+                if params.len() > 2 {
+                    Err(ClientError::WrongNumberOfArguments("ping".to_string()))
+                } else {
+                    Ok(RequestCmd::Ping(params.get(1).cloned()))
+                }
+            }
+            c => Err(ClientError::UnknownCommand(c.to_string())),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+enum ClientError {
+    #[error("unknown command '{0}'")]
+    UnknownCommand(String),
+    #[error("wrong number of arguments for '{0}' command")]
+    WrongNumberOfArguments(String),
+}
+
+#[derive(Debug)]
 enum ReplyCmd {
     Null,
     SimpleString(String),
@@ -124,18 +171,30 @@ struct Deserializer {
     lf_pos: usize,
 }
 
+#[derive(Debug, Error)]
+enum DeserializeError {
+    #[error("message must be an array")]
+    InvalidStartOfMsg,
+    #[error("invalid array")]
+    MalformedArray,
+    #[error("bulk string expected")]
+    BulkStringExpected,
+    #[error("malformed bulk string")]
+    MalformedBulkString,
+}
+
 impl Deserializer {
-    fn deserialize_msg(&mut self, msg: &[u8]) -> Result<Vec<String>, ClientError> {
+    fn deserialize_msg(&mut self, msg: &[u8]) -> Result<Vec<String>, DeserializeError> {
         if msg.get(self.cursor).is_none_or(|c| *c != ARRAY_TYPE) {
-            return Err(ClientError::InvalidStartOfMsg);
+            return Err(DeserializeError::InvalidStartOfMsg);
         }
 
         // advance to the first CRLF to find out how many elements the array has
         self.cursor += 1;
         self.update_cr_lf(msg)
-            .map_err(|_| ClientError::MalformedArray)?;
+            .map_err(|_| DeserializeError::MalformedArray)?;
         let array_size = get_u32_from_string(&msg[self.cursor..self.cr_pos])
-            .map_err(|_| ClientError::MalformedArray)?;
+            .map_err(|_| DeserializeError::MalformedArray)?;
 
         // extract the bulk strings
         let mut params = vec![];
@@ -151,54 +210,54 @@ impl Deserializer {
         // make sure there's nothing else after the last CRLF
         self.cursor += 1;
         if msg.get(self.cursor).is_some() {
-            return Err(ClientError::MalformedArray);
+            return Err(DeserializeError::MalformedArray);
         }
 
         Ok(params)
     }
 
-    fn check_bulk_string_type(&mut self, msg: &[u8]) -> Result<(), ClientError> {
+    fn check_bulk_string_type(&mut self, msg: &[u8]) -> Result<(), DeserializeError> {
         self.cursor = self.lf_pos + 1;
         if msg.get(self.cursor).is_none() {
-            return Err(ClientError::MalformedBulkString);
+            return Err(DeserializeError::MalformedBulkString);
         }
         if msg[self.cursor] != BULK_STRING_TYPE {
-            return Err(ClientError::BulkStringExpected);
+            return Err(DeserializeError::BulkStringExpected);
         }
         Ok(())
     }
 
-    fn jump_to_lf(&mut self, msg: &[u8], bulk_string_size: usize) -> Result<(), ClientError> {
+    fn jump_to_lf(&mut self, msg: &[u8], bulk_string_size: usize) -> Result<(), DeserializeError> {
         self.cursor += bulk_string_size;
         if msg.get(self.cursor).is_none_or(|c| *c != CR) {
-            return Err(ClientError::MalformedBulkString);
+            return Err(DeserializeError::MalformedBulkString);
         }
         self.cursor += 1;
         if msg.get(self.cursor).is_none_or(|c| *c != LF) {
-            return Err(ClientError::MalformedBulkString);
+            return Err(DeserializeError::MalformedBulkString);
         }
         self.lf_pos = self.cursor;
         Ok(())
     }
 
-    fn extract_bulk_string(&mut self, msg: &[u8]) -> Result<(String, u32), ClientError> {
+    fn extract_bulk_string(&mut self, msg: &[u8]) -> Result<(String, u32), DeserializeError> {
         // get the size
         self.cursor += 1;
         self.update_cr_lf(msg)
-            .map_err(|_| ClientError::MalformedBulkString)?;
+            .map_err(|_| DeserializeError::MalformedBulkString)?;
 
         let bulk_string_size = get_u32_from_string(&msg[self.cursor..self.cr_pos])
-            .map_err(|_| ClientError::MalformedBulkString)?;
+            .map_err(|_| DeserializeError::MalformedBulkString)?;
 
         // get the data (make sure it's consistent with the size)
         self.cursor = self.lf_pos + 1;
         if msg.get(self.cursor).is_none() || msg[self.cursor..].len() < bulk_string_size as usize {
-            return Err(ClientError::MalformedBulkString);
+            return Err(DeserializeError::MalformedBulkString);
         }
         let bulk_string_bytes = &msg[self.cursor..self.cursor + bulk_string_size as usize];
         let bulk_string = str::from_utf8(bulk_string_bytes)
             .map(|s| s.to_owned())
-            .map_err(|_| ClientError::MalformedBulkString)?;
+            .map_err(|_| DeserializeError::MalformedBulkString)?;
 
         Ok((bulk_string, bulk_string_size))
     }
@@ -303,14 +362,14 @@ mod tests {
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::InvalidStartOfMsg
+            DeserializeError::InvalidStartOfMsg
         ));
 
         let msg = b"";
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::InvalidStartOfMsg
+            DeserializeError::InvalidStartOfMsg
         ));
     }
 
@@ -320,7 +379,7 @@ mod tests {
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::MalformedArray
+            DeserializeError::MalformedArray
         ));
     }
 
@@ -330,7 +389,7 @@ mod tests {
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::MalformedBulkString
+            DeserializeError::MalformedBulkString
         ));
     }
 
@@ -340,7 +399,7 @@ mod tests {
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::MalformedArray
+            DeserializeError::MalformedArray
         ));
     }
 
@@ -350,7 +409,7 @@ mod tests {
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::MalformedArray
+            DeserializeError::MalformedArray
         ));
     }
 
@@ -360,7 +419,7 @@ mod tests {
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::BulkStringExpected
+            DeserializeError::BulkStringExpected
         ));
     }
 
@@ -370,7 +429,7 @@ mod tests {
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::MalformedBulkString
+            DeserializeError::MalformedBulkString
         ));
     }
 
@@ -380,7 +439,7 @@ mod tests {
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::MalformedBulkString
+            DeserializeError::MalformedBulkString
         ));
     }
 
@@ -390,7 +449,7 @@ mod tests {
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::MalformedBulkString
+            DeserializeError::MalformedBulkString
         ));
     }
 
@@ -400,7 +459,7 @@ mod tests {
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::MalformedBulkString
+            DeserializeError::MalformedBulkString
         ));
     }
 
@@ -410,7 +469,7 @@ mod tests {
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::MalformedBulkString
+            DeserializeError::MalformedBulkString
         ));
     }
 
@@ -420,7 +479,7 @@ mod tests {
         let mut deserializer = Deserializer::default();
         assert!(matches!(
             deserializer.deserialize_msg(msg).unwrap_err(),
-            ClientError::MalformedArray
+            DeserializeError::MalformedArray
         ));
     }
 }

@@ -1,5 +1,7 @@
 use std::{num::ParseIntError, str};
 
+use log::{error, trace};
+
 use bytes::BytesMut;
 use thiserror::Error;
 use tokio::{
@@ -18,6 +20,7 @@ const LF: u8 = b'\n';
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    env_logger::init();
     let listener = TcpListener::bind("127.0.0.1:6379").await?;
     loop {
         let (mut stream, _) = listener.accept().await?;
@@ -31,16 +34,17 @@ async fn main() -> io::Result<()> {
                         break;
                     }
                     Ok(n) => {
-                        println!(
-                            "Received {:?}",
+                        trace!(
+                            "received: {:?}",
                             String::from_utf8(buf[cursor..cursor + n].to_vec())
                         );
+
                         let reply = {
                             Deserializer::default()
                                 .deserialize_msg(&buf[cursor..cursor + n])
                                 .map_err(|e| ReplyCmd::SimpleError(e.to_string()))
                                 .map(|des| {
-                                    println!("Deserialized {:?}", des);
+                                    trace!("deserialized {:?}", des);
                                     match RequestCmd::try_from(des) {
                                         Ok(cmd) => cmd.execute(),
                                         Err(e) => ReplyCmd::SimpleError(e.to_string()),
@@ -54,7 +58,7 @@ async fn main() -> io::Result<()> {
                         cursor += n;
                     }
                     Err(e) => {
-                        println!("Failed to read from socket: {:?}", e);
+                        error!("failed to read from socket: {}", e);
                         break;
                     }
                 }

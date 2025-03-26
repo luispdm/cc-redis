@@ -39,19 +39,18 @@ async fn main() -> io::Result<()> {
                             String::from_utf8(buf[cursor..cursor + n].to_vec())
                         );
 
-                        let reply = {
-                            Deserializer::default()
-                                .deserialize_msg(&buf[cursor..cursor + n])
-                                .map_err(|e| ReplyCmd::SimpleError(e.to_string()))
-                                .map(|des| {
+                        let reply = Deserializer::default()
+                            .deserialize_msg(&buf[cursor..cursor + n])
+                            .map_or_else(
+                                |e| ReplyCmd::SimpleError(e.to_string()),
+                                |des| {
                                     trace!("deserialized {:?}", des);
-                                    match RequestCmd::try_from(des) {
-                                        Ok(cmd) => cmd.execute(),
-                                        Err(e) => ReplyCmd::SimpleError(e.to_string()),
-                                    }
-                                })
-                                .unwrap()
-                        };
+                                    RequestCmd::try_from(des).map_or_else(
+                                        |e| ReplyCmd::SimpleError(e.to_string()),
+                                        |cmd| cmd.execute(),
+                                    )
+                                },
+                            );
 
                         writer.write_all(&reply.serialize()).await.unwrap();
                         writer.flush().await.unwrap();

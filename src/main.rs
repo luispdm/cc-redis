@@ -66,6 +66,7 @@ async fn main() -> io::Result<()> {
     }
 }
 
+#[derive(Debug, PartialEq)]
 enum RequestCmd {
     Ping(Option<String>),
     Echo(String),
@@ -74,8 +75,11 @@ enum RequestCmd {
 impl RequestCmd {
     fn execute(self) -> ReplyCmd {
         match self {
-            Self::Ping(val) => val.map_or(ReplyCmd::SimpleString("PONG".to_string()), ReplyCmd::BulkString),
-            Self::Echo(val) => ReplyCmd::BulkString(val)
+            Self::Ping(val) => val.map_or(
+                ReplyCmd::SimpleString("PONG".to_string()),
+                ReplyCmd::BulkString,
+            ),
+            Self::Echo(val) => ReplyCmd::BulkString(val),
         }
     }
 }
@@ -108,7 +112,7 @@ impl TryFrom<Vec<String>> for RequestCmd {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq)]
 enum ClientError {
     #[error("unknown command '{0}'")]
     UnknownCommand(String),
@@ -116,7 +120,7 @@ enum ClientError {
     WrongNumberOfArguments(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum ReplyCmd {
     Null,
     SimpleString(String),
@@ -487,5 +491,105 @@ mod tests {
             deserializer.deserialize_msg(msg).unwrap_err(),
             DeserializeError::MalformedArray
         ));
+    }
+
+    #[test]
+    fn ping_no_args() {
+        let params = vec!["PING".to_string()];
+        let cmd = RequestCmd::try_from(params);
+        assert_eq!(cmd.unwrap(), RequestCmd::Ping(None));
+    }
+
+    #[test]
+    fn ping_with_arg() {
+        let params = vec!["PING".to_string(), "hello".to_string()];
+        let cmd = RequestCmd::try_from(params);
+        assert_eq!(cmd.unwrap(), RequestCmd::Ping(Some("hello".to_string())));
+    }
+
+    #[test]
+    fn ping_too_many_args() {
+        let params = vec!["PING".to_string(), "arg1".to_string(), "arg2".to_string()];
+        let cmd = RequestCmd::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments("ping".to_string())
+        );
+    }
+
+    #[test]
+    fn echo_ok() {
+        let params = vec!["ECHO".to_string(), "hello world".to_string()];
+        let cmd = RequestCmd::try_from(params);
+        assert_eq!(cmd.unwrap(), RequestCmd::Echo("hello world".to_string()));
+    }
+
+    #[test]
+    fn echo_no_args() {
+        let params = vec!["ECHO".to_string()];
+        let cmd = RequestCmd::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments("echo".to_string())
+        );
+    }
+
+    #[test]
+    fn echo_too_many_args() {
+        let params = vec!["ECHO".to_string(), "arg1".to_string(), "arg2".to_string()];
+        let cmd = RequestCmd::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments("echo".to_string())
+        );
+    }
+
+    #[test]
+    fn unknown_command() {
+        let params = vec!["UNKNOWN".to_string()];
+        let cmd = RequestCmd::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::UnknownCommand("unknown".to_string())
+        );
+    }
+
+    #[test]
+    fn case_insensitive_commands() {
+        let ping_lowercase = vec!["ping".to_string()];
+        let ping_uppercase = vec!["PING".to_string()];
+        let ping_mixed_case = vec!["PiNg".to_string()];
+
+        assert!(RequestCmd::try_from(ping_lowercase).is_ok());
+        assert!(RequestCmd::try_from(ping_uppercase).is_ok());
+        assert!(RequestCmd::try_from(ping_mixed_case).is_ok());
+    }
+
+    #[test]
+    fn execute_ping_no_arg() {
+        let cmd = RequestCmd::Ping(None);
+        let reply = cmd.execute();
+        assert_eq!(reply, ReplyCmd::SimpleString("PONG".to_string()));
+    }
+
+    #[test]
+    fn execute_ping_arg() {
+        let cmd = RequestCmd::Ping(Some("ciao".to_string()));
+        let reply = cmd.execute();
+        assert_eq!(reply, ReplyCmd::BulkString("ciao".to_string()));
+    }
+
+    #[test]
+    fn execute_ping_with_arg() {
+        let cmd = RequestCmd::Ping(Some("hello".to_string()));
+        let reply = cmd.execute();
+        assert_eq!(reply, ReplyCmd::BulkString("hello".to_string()));
+    }
+
+    #[test]
+    fn execute_echo() {
+        let cmd = RequestCmd::Echo("test message".to_string());
+        let reply = cmd.execute();
+        assert_eq!(reply, ReplyCmd::BulkString("test message".to_string()));
     }
 }

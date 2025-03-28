@@ -26,12 +26,12 @@ impl Request {
             ),
             Self::Echo(val) => Response::BulkString(val),
             Self::Set(key, val) => {
-                let mut map = db.lock().await;
+                let mut map = db.write().await;
                 map.insert(key, val);
                 Response::SimpleString("OK".to_string())
             }
             Self::Get(key) => {
-                let map = db.lock().await;
+                let map = db.read().await;
                 map.get(&key).map_or_else(
                     || Response::Null,
                     |val| Response::BulkString(val.to_string()),

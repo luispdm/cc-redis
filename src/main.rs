@@ -15,13 +15,13 @@ use bytes::BytesMut;
 use tokio::{
     io::{self, AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
-    sync::Mutex,
+    sync::RwLock,
 };
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
-    let db = Arc::new(Mutex::new(HashMap::<String, String>::new()));
+    let db = Arc::new(RwLock::new(HashMap::<String, String>::new()));
 
     let listener = TcpListener::bind("127.0.0.1:6379").await?;
     loop {

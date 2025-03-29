@@ -18,7 +18,7 @@ pub enum Request {
 }
 
 impl Request {
-    pub async fn execute(self, db: Db) -> Response {
+    pub fn execute(self, db: &Db) -> Response {
         match self {
             Self::Ping(val) => val.map_or(
                 Response::SimpleString("PONG".to_string()),
@@ -26,12 +26,12 @@ impl Request {
             ),
             Self::Echo(val) => Response::BulkString(val),
             Self::Set(key, val) => {
-                let mut map = db.write().await;
+                let mut map = db.lock().unwrap();
                 map.insert(key, val);
                 Response::SimpleString("OK".to_string())
             }
             Self::Get(key) => {
-                let map = db.read().await;
+                let map = db.lock().unwrap();
                 map.get(&key).map_or_else(
                     || Response::Null,
                     |val| Response::BulkString(val.to_string()),

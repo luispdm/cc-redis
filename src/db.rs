@@ -1,5 +1,6 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
-use tokio::sync::RwLock;
-
-pub type Db = Arc<RwLock<HashMap<String, String>>>;
+pub type Db = Arc<Mutex<HashMap<String, String>>>;

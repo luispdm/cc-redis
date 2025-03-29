@@ -3,25 +3,27 @@ mod db;
 mod deserializer;
 mod resp;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use cmd::{request::Request, response::Response};
 use db::Db;
 use deserializer::Deserializer;
 
-use log::{error, trace};
+use log::{error, trace, warn};
 
 use bytes::BytesMut;
 use tokio::{
     io::{self, AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
-    sync::RwLock,
 };
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
-    let db = Arc::new(RwLock::new(HashMap::<String, String>::new()));
+    let db = Arc::new(Mutex::new(HashMap::<String, String>::new()));
 
     let listener = TcpListener::bind("127.0.0.1:6379").await?;
     loop {
@@ -29,26 +31,27 @@ async fn main() -> io::Result<()> {
         let db = Arc::clone(&db);
 
         tokio::spawn(async move {
-            let (mut reader, mut writer) = stream.split();
-            let mut buf = BytesMut::with_capacity(4096);
-            let mut cursor = 0;
+            let (reader, writer) = stream.split();
+            let mut reader = tokio::io::BufReader::new(reader);
+            let mut writer = tokio::io::BufWriter::new(writer);
+            let mut buf = BytesMut::with_capacity(1024);
             loop {
                 match reader.read_buf(&mut buf).await {
                     Ok(0) => {
                         break;
                     }
-                    Ok(n) => {
-                        trace!(
-                            "received: {:?}",
-                            String::from_utf8(buf[cursor..cursor + n].to_vec())
-                        );
+                    Ok(_) => {
+                        trace!("received: {:?}", String::from_utf8(buf[..].to_vec()));
 
-                        let reply =
-                            deserialize_and_execute(&buf[cursor..cursor + n], db.clone()).await; // TODO how to avoid re-cloning?
+                        let reply = deserialize_and_execute(&buf[..], &db);
 
-                        writer.write_all(&reply.serialize()).await.unwrap();
-                        writer.flush().await.unwrap();
-                        cursor += n;
+                        if let Err(e) = writer.write_all(&reply.serialize()).await {
+                            error!("failed to write to socket: {}", e)
+                        }
+                        if let Err(e) = writer.flush().await {
+                            error!("failed to flush to socket: {}", e)
+                        }
+                        buf.clear();
                     }
                     Err(e) => {
                         error!("failed to read from socket: {}", e);
@@ -60,11 +63,12 @@ async fn main() -> io::Result<()> {
     }
 }
 
-async fn deserialize_and_execute(msg: &[u8], db: Db) -> Response {
+fn deserialize_and_execute(msg: &[u8], db: &Db) -> Response {
     let maybe_des = Deserializer::default()
         .deserialize_msg(msg)
         .map_err(|e| Response::SimpleError(e.to_string()));
     if let Err(e) = maybe_des {
+        warn!("deserialization failed: {:?}", e);
         return e;
     }
 
@@ -72,6 +76,6 @@ async fn deserialize_and_execute(msg: &[u8], db: Db) -> Response {
     trace!("deserialized {:?}", des);
     match Request::try_from(des) {
         Err(e) => Response::SimpleError(e.to_string()),
-        Ok(cmd) => cmd.execute(db).await,
+        Ok(cmd) => cmd.execute(db),
     }
 }

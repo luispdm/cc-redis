@@ -31,9 +31,8 @@ async fn main() -> io::Result<()> {
         let db = Arc::clone(&db);
 
         tokio::spawn(async move {
-            let (reader, writer) = stream.split();
-            let mut reader = tokio::io::BufReader::new(reader);
-            let mut writer = tokio::io::BufWriter::new(writer);
+            // TODO evaluate `BufReader` and `BufWriter` over `ReadHalf` and `WriteHalf`
+            let (mut reader, mut writer) = stream.split();
             let mut buf = BytesMut::with_capacity(1024);
             loop {
                 match reader.read_buf(&mut buf).await {

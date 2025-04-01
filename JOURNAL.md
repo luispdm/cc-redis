@@ -9,6 +9,40 @@ Read carefully the docs about `read_buf`: if the function returns `0`, either EO
 
 Performance is good, even better than the original Redis, but while the original Redis consumes 80% of the CPU, our Redis consumes 280% of the CPU, at least according to `top`.
 
-Next time:
+TODO:
 - evaluate `std::sync::Mutex` over `tokio::sync::Mutex` for the performance side of things
-- DON'T focus on CPU optimization for now
+- investigate how to reduce the CPU usage
+
+## 2024-04-01
+Added the missing tests for the `GET` command. Fixed the `PING` and `ECHO` tests.
+
+Advancing to [step #5](https://codingchallenges.fyi/challenges/challenge-redis/#step-5). After reading the Redis docs and digging online, I currently see three ways to implement the expiration policy:
+- store the timestamp as part of the value (#1)
+- store the timestamp and the key as a tuple in a separate `BTreeSet` (#2)
+- store the timestamp and the key as a tuple in a separate `BTreeSet` and the key -> timestamp association in a separate `HashMap` (#3)
+
+Active expiration can be implemented as a cron job in a separate tokio task, kinda like a garbage-collector.
+
+### Pros and cons #1
+- 👍 checking for expiration upon `GET` requests is trivial
+- 👍 `SET` operations are trivial
+- 👎 active expiration can be quite CPU intensive when there are a lot of elements; this can be mitigated with the random sampling strategy that Redis used in earlier implementations, where only a subset of keys are tested for expiration and the size of the sample is adjusted, depending on how many expired keys have been found over that sample
+
+### Pros and cons #2
+- 👍 active expiration is space-efficient as it gets rid of all expired keys; in a linear use-case scenario, the more frequently the task runs the less keys it has to remove, making it less CPU intensive
+- 👎 must search for the key expiration time on `GET` requests
+- 👎 must search and update the key expiration time on `SET` requests
+
+### Pros and cons #3
+- 👍 same as #2
+- 👍 retrieval of the key expiration time is fast on `GET` requests, the timestamp stored in the `HashMap` is now used to remove the entry in the `BTreeSet`
+- 👍 no need to search for the key expiration time on `SET` requests, just update the entry in the three data structures
+- 👎 one additional operation is performed everytime
+- 👎 the expiration keys now take twice as much space compared with #2
+
+Given that I want to prioritize UX while accepting a good compromise over memory/storage used, I will go with either #1 or #3.
+
+The main pain-point of #3 is the space used. Let us assume that in the worst-case scenario, 10M expiration keys are stored at any given time, with each key being ~60 ASCII chars on average and the timestamp stored as `SystemTime`, which takes 16 bytes.
+Each `String` takes: 60 bytes + 24 bytes for pointer, length and capacity. Total space taken per key: 100 bytes.
+
+10M keys * 100 bytes = 1GB of memory/storage used. This might be acceptable in certain scenarios.

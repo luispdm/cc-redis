@@ -85,6 +85,8 @@ impl TryFrom<Vec<String>> for Request {
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::HashMap, sync::Mutex};
+
     use super::*;
 
     #[test]
@@ -159,32 +161,31 @@ mod tests {
         assert!(Request::try_from(ping_mixed_case).is_ok());
     }
 
-    // TODO fix tests
-    // #[test]
-    // fn execute_ping_no_arg() {
-    //     let cmd = Request::Ping(None);
-    //     let reply = cmd.execute();
-    //     assert_eq!(reply, Response::SimpleString("PONG".to_string()));
-    // }
+    #[test]
+    fn execute_ping_no_arg() {
+        let cmd = Request::Ping(None);
+        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        assert_eq!(reply, Response::SimpleString("PONG".to_string()));
+    }
 
-    // #[test]
-    // fn execute_ping_arg() {
-    //     let cmd = Request::Ping(Some("ciao".to_string()));
-    //     let reply = cmd.execute();
-    //     assert_eq!(reply, Response::BulkString("ciao".to_string()));
-    // }
+    #[test]
+    fn execute_ping_arg() {
+        let cmd = Request::Ping(Some("ciao".to_string()));
+        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        assert_eq!(reply, Response::BulkString("ciao".to_string()));
+    }
 
-    // #[test]
-    // fn execute_ping_with_arg() {
-    //     let cmd = Request::Ping(Some("hello".to_string()));
-    //     let reply = cmd.execute();
-    //     assert_eq!(reply, Response::BulkString("hello".to_string()));
-    // }
+    #[test]
+    fn execute_ping_with_arg() {
+        let cmd = Request::Ping(Some("hello".to_string()));
+        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        assert_eq!(reply, Response::BulkString("hello".to_string()));
+    }
 
-    // #[test]
-    // fn execute_echo() {
-    //     let cmd = Request::Echo("test message".to_string());
-    //     let reply = cmd.execute();
-    //     assert_eq!(reply, Response::BulkString("test message".to_string()));
-    // }
+    #[test]
+    fn execute_echo() {
+        let cmd = Request::Echo("test message".to_string());
+        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        assert_eq!(reply, Response::BulkString("test message".to_string()));
+    }
 }

@@ -90,6 +90,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn get_no_args() {
+        let params = vec!["GET".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(cmd.unwrap_err(), ClientError::WrongNumberOfArguments("get".to_string()));
+    }
+
+    #[test]
+    fn get_ok() {
+        let params = vec!["GET".to_string(), "key".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(cmd.unwrap(), Request::Get("key".to_string()));
+    }
+
+    #[test]
     fn ping_no_args() {
         let params = vec!["PING".to_string()];
         let cmd = Request::try_from(params);
@@ -187,5 +201,21 @@ mod tests {
         let cmd = Request::Echo("test message".to_string());
         let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
         assert_eq!(reply, Response::BulkString("test message".to_string()));
+    }
+
+    #[test]
+    fn execute_get_null() {
+        let cmd = Request::Get("key".to_string());
+        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        assert_eq!(reply, Response::Null);
+    }
+
+    #[test]
+    fn execute_get_value() {
+        let db = Db::new(Mutex::new(HashMap::new()));
+        db.lock().unwrap().insert("key".to_string(), "value".to_string());
+        let cmd = Request::Get("key".to_string());
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::BulkString("value".to_string()));
     }
 }

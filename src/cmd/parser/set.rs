@@ -28,6 +28,7 @@ impl Set {
     }
 }
 
+#[derive(Debug, PartialEq)]
 struct Expiration(SystemTime);
 
 impl TryFrom<(String, String)> for Expiration {
@@ -53,7 +54,39 @@ impl TryFrom<(String, String)> for Expiration {
                 let desired = UNIX_EPOCH.checked_add(Duration::from_millis(to_add)).ok_or(ClientError::IntegerError)?;
                 Ok(Expiration(desired))
             }
-            _ => Err(ClientError::IntegerError)
+            _ => Err(ClientError::SyntaxError)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expiration_no_number() {
+        assert_eq!(ClientError::IntegerError, Expiration::try_from(("".to_string(), "hola".to_string())).unwrap_err());
+    }
+
+    #[test]
+    fn expiration_out_of_range_number() {
+        assert_eq!(ClientError::IntegerError, Expiration::try_from(("".to_string(), "1000000000000000000000".to_string())).unwrap_err());
+    }
+
+    #[test]
+    fn expiration_wrong_command() {
+        assert_eq!(ClientError::SyntaxError, Expiration::try_from(("".to_string(), "100".to_string())).unwrap_err());
+    }
+
+    #[test]
+    fn expiration_exat_ok() {
+        let exp = Expiration::try_from(("exat".to_string(), "1".to_string())).unwrap();
+        assert_eq!(Expiration(UNIX_EPOCH.checked_add(Duration::from_secs(1)).unwrap()), exp);
+    }
+
+    #[test]
+    fn expiration_pxat_ok() {
+        let exp = Expiration::try_from(("pxat".to_string(), "1".to_string())).unwrap();
+        assert_eq!(Expiration(UNIX_EPOCH.checked_add(Duration::from_millis(1)).unwrap()), exp);
     }
 }

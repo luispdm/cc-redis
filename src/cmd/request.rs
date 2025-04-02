@@ -1,4 +1,9 @@
-use crate::{cmd::response::Response, cmd::parser::set::Set, db::Db};
+use std::time::SystemTime;
+
+use crate::{
+    cmd::{parser::set::Set, response::Response},
+    db::{Db, Object},
+};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq)]
@@ -30,17 +35,27 @@ impl Request {
             ),
             Self::Echo(val) => Response::BulkString(val),
             Self::Set(set) => {
-                // TODO use expiration
                 let mut map = db.lock().unwrap();
-                map.insert(set.key, set.value);
+                map.insert(set.key, Object::new(set.value, set.expiration));
                 Response::SimpleString("OK".to_string())
             }
             Self::Get(key) => {
-                let map = db.lock().unwrap();
-                map.get(&key).map_or_else(
-                    || Response::Null,
-                    |val| Response::BulkString(val.to_string()),
-                )
+                let mut map = db.lock().unwrap();
+                let object = match map.get(&key) {
+                    Some(o) => o,
+                    None => return Response::Null,
+                };
+
+                match object.expiration {
+                    None => Response::BulkString(object.value.to_string()),
+                    Some(exp) => match exp.duration_since(SystemTime::now()) {
+                        Ok(_) => Response::BulkString(object.value.to_string()),
+                        _ => {
+                            map.remove(&key);
+                            Response::Null
+                        }
+                    },
+                }
             }
         }
     }
@@ -90,7 +105,7 @@ impl TryFrom<Vec<String>> for Request {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Mutex};
+    use std::{collections::HashMap, sync::Mutex, time::Duration};
 
     use super::*;
 
@@ -98,7 +113,10 @@ mod tests {
     fn get_no_args() {
         let params = vec!["GET".to_string()];
         let cmd = Request::try_from(params);
-        assert_eq!(cmd.unwrap_err(), ClientError::WrongNumberOfArguments("get".to_string()));
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments("get".to_string())
+        );
     }
 
     #[test]
@@ -216,9 +234,42 @@ mod tests {
     }
 
     #[test]
-    fn execute_get_value() {
+    fn execute_get_no_expiration() {
         let db = Db::new(Mutex::new(HashMap::new()));
-        db.lock().unwrap().insert("key".to_string(), "value".to_string());
+        db.lock()
+            .unwrap()
+            .insert("key".to_string(), Object::new("value".to_string(), None));
+        let cmd = Request::Get("key".to_string());
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::BulkString("value".to_string()));
+    }
+
+    #[test]
+    fn execute_get_expired() {
+        let db = Db::new(Mutex::new(HashMap::new()));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new("value".to_string(), Some(SystemTime::now())),
+        );
+        let cmd = Request::Get("key".to_string());
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Null);
+    }
+
+    #[test]
+    fn execute_get_not_expired() {
+        let db = Db::new(Mutex::new(HashMap::new()));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new(
+                "value".to_string(),
+                Some(
+                    SystemTime::now()
+                        .checked_add(Duration::from_secs(10))
+                        .unwrap(),
+                ),
+            ),
+        );
         let cmd = Request::Get("key".to_string());
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::BulkString("value".to_string()));

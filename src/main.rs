@@ -9,7 +9,7 @@ use std::{
 };
 
 use cmd::{request::Request, response::Response};
-use db::Db;
+use db::{Db, Object};
 use deserializer::Deserializer;
 
 use log::{error, trace, warn};
@@ -23,7 +23,7 @@ use tokio::{
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
-    let db = Arc::new(Mutex::new(HashMap::<String, String>::new()));
+    let db = Arc::new(Mutex::new(HashMap::<String, Object>::new()));
 
     let listener = TcpListener::bind("127.0.0.1:6379").await?;
     loop {

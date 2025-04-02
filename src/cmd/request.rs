@@ -85,7 +85,7 @@ impl TryFrom<Vec<String>> for Request {
                 }
             }
             "set" => {
-                if params.len() != 3 {
+                if params.len() == 1 {
                     Err(ClientError::WrongNumberOfArguments("set".to_string()))
                 } else {
                     Ok(Set::parse(params[1..].to_vec()).map(Request::Set))?

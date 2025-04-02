@@ -79,11 +79,51 @@ mod tests {
     }
 
     #[test]
+    fn expiration_ex_ok() {
+        let before = SystemTime::now();
+        let expiration = Expiration::try_from(("ex".to_string(), "1".to_string())).unwrap();
+        let after = SystemTime::now();
+
+        let min_expected = before.checked_add(Duration::from_secs(1)).unwrap();
+        let max_expected = after.checked_add(Duration::from_secs(1)).unwrap();
+
+        assert!(expiration.0 >= min_expected);
+        assert!(expiration.0 <= max_expected);
+    }
+
+    // to test the error case of px, `System::now()` should be mocked
+    #[test]
+    fn expiration_px_ok() {
+        let before = SystemTime::now();
+        let expiration = Expiration::try_from(("px".to_string(), "100".to_string())).unwrap();
+        let after = SystemTime::now();
+
+        let min_expected = before.checked_add(Duration::from_millis(100)).unwrap();
+        let max_expected = after.checked_add(Duration::from_millis(100)).unwrap();
+
+        assert!(expiration.0 >= min_expected);
+        assert!(expiration.0 <= max_expected);
+    }
+
+    #[test]
+    fn expiration_ex_out_of_range() {
+        let err = Expiration::try_from(("ex".to_string(), "18446744073709551615".to_string())).unwrap_err();
+        assert_eq!(ClientError::IntegerError, err);
+    }
+
+    #[test]
     fn expiration_exat_ok() {
         let exp = Expiration::try_from(("exat".to_string(), "1".to_string())).unwrap();
         assert_eq!(Expiration(UNIX_EPOCH.checked_add(Duration::from_secs(1)).unwrap()), exp);
     }
 
+    #[test]
+    fn expiration_exat_out_of_range() {
+        let err = Expiration::try_from(("exat".to_string(), "18446744073709551615".to_string())).unwrap_err();
+        assert_eq!(ClientError::IntegerError, err);
+    }
+
+    // to test the error case of pxat, `System::now()` should be mocked
     #[test]
     fn expiration_pxat_ok() {
         let exp = Expiration::try_from(("pxat".to_string(), "1".to_string())).unwrap();

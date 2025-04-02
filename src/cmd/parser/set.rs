@@ -1,0 +1,59 @@
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use crate::cmd::request::ClientError; // TODO circular dependency?
+
+#[derive(Debug, PartialEq)]
+pub struct Set {
+    pub key: String,
+    pub value: String,
+    pub expiration: Option<SystemTime>,
+}
+
+impl Set {
+    pub fn parse(params: Vec<String>) -> Result<Self, ClientError> {
+        if params.len() < 2 {
+            return Err(ClientError::WrongNumberOfArguments("set".to_string()));
+        }
+        if params.len() == 3 || params.len() > 5 {
+            return Err(ClientError::SyntaxError);
+        }
+        let key = params[0].to_owned();
+        let value = params[1].to_owned();
+        let expiration =  if params.len() == 4 {
+            Expiration::try_from((params[2].to_owned(), params[3].to_owned())).map(|op| op.0).ok()
+        } else {
+            None
+        };
+        Ok(Self { key, value, expiration })
+    }
+}
+
+struct Expiration(SystemTime);
+
+impl TryFrom<(String, String)> for Expiration {
+    type Error = ClientError;
+
+    fn try_from((option, value): (String, String)) -> Result<Self, Self::Error> {
+        let to_add = value.parse::<u64>().map_err(|_| ClientError::IntegerError)?;
+
+        match option {
+            opt if opt == "ex" => {
+                let desired = SystemTime::now().checked_add(Duration::from_secs(to_add)).ok_or(ClientError::IntegerError)?;
+                Ok(Expiration(desired))
+            }
+            opt if opt == "px" => {
+                let desired = SystemTime::now().checked_add(Duration::from_millis(to_add)).ok_or(ClientError::IntegerError)?;
+                Ok(Expiration(desired))
+            }
+            opt if opt == "exat" => {
+                let desired = UNIX_EPOCH.checked_add(Duration::from_secs(to_add)).ok_or(ClientError::IntegerError)?;
+                Ok(Expiration(desired))
+            }
+            opt if opt == "pxat" => {
+                let desired = UNIX_EPOCH.checked_add(Duration::from_millis(to_add)).ok_or(ClientError::IntegerError)?;
+                Ok(Expiration(desired))
+            }
+            _ => Err(ClientError::IntegerError)
+        }
+    }
+}

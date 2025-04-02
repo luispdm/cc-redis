@@ -1,4 +1,4 @@
-use crate::{cmd::response::Response, db::Db};
+use crate::{cmd::response::Response, cmd::parser::set::Set, db::Db};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq)]
@@ -7,6 +7,10 @@ pub enum ClientError {
     UnknownCommand(String),
     #[error("wrong number of arguments for '{0}' command")]
     WrongNumberOfArguments(String),
+    #[error("syntax error")]
+    SyntaxError,
+    #[error("value is not an integer or out of range")]
+    IntegerError,
 }
 
 #[derive(Debug, PartialEq)]
@@ -14,7 +18,7 @@ pub enum Request {
     Ping(Option<String>),
     Echo(String),
     Get(String),
-    Set(String, String),
+    Set(Set),
 }
 
 impl Request {
@@ -25,9 +29,10 @@ impl Request {
                 Response::BulkString,
             ),
             Self::Echo(val) => Response::BulkString(val),
-            Self::Set(key, val) => {
+            Self::Set(set) => {
+                // TODO use expiration
                 let mut map = db.lock().unwrap();
-                map.insert(key, val);
+                map.insert(set.key, set.value);
                 Response::SimpleString("OK".to_string())
             }
             Self::Get(key) => {
@@ -68,7 +73,7 @@ impl TryFrom<Vec<String>> for Request {
                 if params.len() != 3 {
                     Err(ClientError::WrongNumberOfArguments("set".to_string()))
                 } else {
-                    Ok(Request::Set(params[1].to_owned(), params[2].to_owned()))
+                    Ok(Set::parse(params[1..].to_vec()).map(Request::Set))?
                 }
             }
             "get" => {

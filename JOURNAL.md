@@ -46,3 +46,15 @@ The main pain-point of #3 is the space used. Let us assume that in the worst-cas
 Each `String` takes: 60 bytes + 24 bytes for pointer, length and capacity. Total space taken per key: 100 bytes.
 
 10M keys * 100 bytes = 1GB of memory/storage used. This might be acceptable in certain scenarios.
+
+## 2024-04-02
+For now I decided to go with #1: store expiration as part of the value. Passive expiration implemented. Some bugs fixed and tests added
+
+## 2024-04-03
+Realized that iteration over HashMap is not random on the same program execution by just using `.iter().take(n)`. Either use a separate data structure or change strategy.
+
+A `Vec` would work as a separate data structure but it would be unfeasible for removals on `GET` requests (i.e. passive expiration).
+
+Found that the crates `indexmap` and `rand` might give me what I need. Algorithm implemented, not tested yet.
+
+Problem: the same key is retrieved multiple times. Look into `choose_multiple` and `sample` of `rand`

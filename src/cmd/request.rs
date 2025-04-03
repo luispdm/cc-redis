@@ -51,7 +51,7 @@ impl Request {
                     Some(exp) => match exp.duration_since(SystemTime::now()) {
                         Ok(_) => Response::BulkString(object.value.to_string()),
                         _ => {
-                            map.remove(&key);
+                            map.swap_remove(&key);
                             Response::Null
                         }
                     },
@@ -105,7 +105,9 @@ impl TryFrom<Vec<String>> for Request {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Mutex, time::Duration};
+    use std::{sync::Mutex, time::Duration};
+
+    use indexmap::IndexMap;
 
     use super::*;
 
@@ -201,41 +203,41 @@ mod tests {
     #[test]
     fn execute_ping_no_arg() {
         let cmd = Request::Ping(None);
-        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
         assert_eq!(reply, Response::SimpleString("PONG".to_string()));
     }
 
     #[test]
     fn execute_ping_arg() {
         let cmd = Request::Ping(Some("ciao".to_string()));
-        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
         assert_eq!(reply, Response::BulkString("ciao".to_string()));
     }
 
     #[test]
     fn execute_ping_with_arg() {
         let cmd = Request::Ping(Some("hello".to_string()));
-        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
         assert_eq!(reply, Response::BulkString("hello".to_string()));
     }
 
     #[test]
     fn execute_echo() {
         let cmd = Request::Echo("test message".to_string());
-        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
         assert_eq!(reply, Response::BulkString("test message".to_string()));
     }
 
     #[test]
     fn execute_get_null() {
         let cmd = Request::Get("key".to_string());
-        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
         assert_eq!(reply, Response::Null);
     }
 
     #[test]
     fn execute_get_no_expiration() {
-        let db = Db::new(Mutex::new(HashMap::new()));
+        let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock()
             .unwrap()
             .insert("key".to_string(), Object::new("value".to_string(), None));
@@ -246,7 +248,7 @@ mod tests {
 
     #[test]
     fn execute_get_expired() {
-        let db = Db::new(Mutex::new(HashMap::new()));
+        let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock().unwrap().insert(
             "key".to_string(),
             Object::new("value".to_string(), Some(SystemTime::now())),
@@ -258,7 +260,7 @@ mod tests {
 
     #[test]
     fn execute_get_not_expired() {
-        let db = Db::new(Mutex::new(HashMap::new()));
+        let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock().unwrap().insert(
             "key".to_string(),
             Object::new(

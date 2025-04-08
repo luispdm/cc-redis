@@ -4,14 +4,15 @@ mod deserializer;
 mod resp;
 
 use std::{
-    collections::HashMap,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use cmd::{request::Request, response::Response};
-use db::Db;
+use db::{Db, Object, remove_expired_entries};
 use deserializer::Deserializer;
 
+use indexmap::IndexMap;
 use log::{error, trace, warn};
 
 use bytes::BytesMut;
@@ -23,9 +24,24 @@ use tokio::{
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
-    let db = Arc::new(Mutex::new(HashMap::<String, String>::new()));
-
+    let db = Arc::new(Mutex::new(IndexMap::<String, Object>::new()));
     let listener = TcpListener::bind("127.0.0.1:6379").await?;
+
+    let expiry_db = Arc::clone(&db);
+    tokio::spawn(async move {
+        let sample_size = 100u64;
+        let stop_threshold = 0.25f64;
+
+        loop {
+            let mut ratio = 1.0f64;
+            while ratio > stop_threshold {
+                ratio = remove_expired_entries(&expiry_db, sample_size as usize);
+            }
+
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    });
+
     loop {
         let (mut stream, _) = listener.accept().await?;
         let db = Arc::clone(&db);

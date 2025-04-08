@@ -1,4 +1,9 @@
-use crate::{cmd::response::Response, db::Db};
+use std::time::SystemTime;
+
+use crate::{
+    cmd::{parser::set::Set, response::Response},
+    db::{Db, Object},
+};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq)]
@@ -7,6 +12,10 @@ pub enum ClientError {
     UnknownCommand(String),
     #[error("wrong number of arguments for '{0}' command")]
     WrongNumberOfArguments(String),
+    #[error("syntax error")]
+    SyntaxError,
+    #[error("value is not an integer or out of range")]
+    IntegerError,
 }
 
 #[derive(Debug, PartialEq)]
@@ -14,7 +23,7 @@ pub enum Request {
     Ping(Option<String>),
     Echo(String),
     Get(String),
-    Set(String, String),
+    Set(Set),
 }
 
 impl Request {
@@ -25,17 +34,28 @@ impl Request {
                 Response::BulkString,
             ),
             Self::Echo(val) => Response::BulkString(val),
-            Self::Set(key, val) => {
+            Self::Set(set) => {
                 let mut map = db.lock().unwrap();
-                map.insert(key, val);
+                map.insert(set.key, Object::new(set.value, set.expiration));
                 Response::SimpleString("OK".to_string())
             }
             Self::Get(key) => {
-                let map = db.lock().unwrap();
-                map.get(&key).map_or_else(
-                    || Response::Null,
-                    |val| Response::BulkString(val.to_string()),
-                )
+                let mut map = db.lock().unwrap();
+                let object = match map.get(&key) {
+                    Some(o) => o,
+                    None => return Response::Null,
+                };
+
+                match object.expiration {
+                    None => Response::BulkString(object.value.to_string()),
+                    Some(exp) => match exp.duration_since(SystemTime::now()) {
+                        Ok(_) => Response::BulkString(object.value.to_string()),
+                        _ => {
+                            map.swap_remove(&key);
+                            Response::Null
+                        }
+                    },
+                }
             }
         }
     }
@@ -65,10 +85,10 @@ impl TryFrom<Vec<String>> for Request {
                 }
             }
             "set" => {
-                if params.len() != 3 {
+                if params.len() == 1 {
                     Err(ClientError::WrongNumberOfArguments("set".to_string()))
                 } else {
-                    Ok(Request::Set(params[1].to_owned(), params[2].to_owned()))
+                    Ok(Set::parse(params[1..].to_vec()).map(Request::Set))?
                 }
             }
             "get" => {
@@ -85,7 +105,9 @@ impl TryFrom<Vec<String>> for Request {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Mutex};
+    use std::{sync::Mutex, time::Duration};
+
+    use indexmap::IndexMap;
 
     use super::*;
 
@@ -93,7 +115,10 @@ mod tests {
     fn get_no_args() {
         let params = vec!["GET".to_string()];
         let cmd = Request::try_from(params);
-        assert_eq!(cmd.unwrap_err(), ClientError::WrongNumberOfArguments("get".to_string()));
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments("get".to_string())
+        );
     }
 
     #[test]
@@ -178,42 +203,75 @@ mod tests {
     #[test]
     fn execute_ping_no_arg() {
         let cmd = Request::Ping(None);
-        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
         assert_eq!(reply, Response::SimpleString("PONG".to_string()));
     }
 
     #[test]
     fn execute_ping_arg() {
         let cmd = Request::Ping(Some("ciao".to_string()));
-        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
         assert_eq!(reply, Response::BulkString("ciao".to_string()));
     }
 
     #[test]
     fn execute_ping_with_arg() {
         let cmd = Request::Ping(Some("hello".to_string()));
-        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
         assert_eq!(reply, Response::BulkString("hello".to_string()));
     }
 
     #[test]
     fn execute_echo() {
         let cmd = Request::Echo("test message".to_string());
-        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
         assert_eq!(reply, Response::BulkString("test message".to_string()));
     }
 
     #[test]
     fn execute_get_null() {
         let cmd = Request::Get("key".to_string());
-        let reply = cmd.execute(&Db::new(Mutex::new(HashMap::new())));
+        let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
         assert_eq!(reply, Response::Null);
     }
 
     #[test]
-    fn execute_get_value() {
-        let db = Db::new(Mutex::new(HashMap::new()));
-        db.lock().unwrap().insert("key".to_string(), "value".to_string());
+    fn execute_get_no_expiration() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock()
+            .unwrap()
+            .insert("key".to_string(), Object::new("value".to_string(), None));
+        let cmd = Request::Get("key".to_string());
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::BulkString("value".to_string()));
+    }
+
+    #[test]
+    fn execute_get_expired() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new("value".to_string(), Some(SystemTime::now())),
+        );
+        let cmd = Request::Get("key".to_string());
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Null);
+    }
+
+    #[test]
+    fn execute_get_not_expired() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new(
+                "value".to_string(),
+                Some(
+                    SystemTime::now()
+                        .checked_add(Duration::from_secs(10))
+                        .unwrap(),
+                ),
+            ),
+        );
         let cmd = Request::Get("key".to_string());
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::BulkString("value".to_string()));

@@ -24,6 +24,7 @@ pub enum Request {
     Echo(String),
     Get(String),
     Set(Set),
+    Exists(Vec<String>),
 }
 
 impl Request {
@@ -56,6 +57,27 @@ impl Request {
                         }
                     },
                 }
+            }
+            Self::Exists(keys) => {
+                let mut map = db.lock().unwrap();
+                let mut existing_keys = 0u64;
+                let now = SystemTime::now();
+
+                for k in keys {
+                    if let Some(object) = map.get(&k) {
+                        let expired = object
+                            .expiration
+                            .is_some_and(|exp| now.duration_since(exp).is_ok());
+
+                        if expired {
+                            map.swap_remove(&k);
+                        } else {
+                            existing_keys += 1;
+                        }
+                    }
+                }
+
+                Response::Integer(existing_keys.to_string())
             }
         }
     }
@@ -96,6 +118,13 @@ impl TryFrom<Vec<String>> for Request {
                     Err(ClientError::WrongNumberOfArguments("get".to_string()))
                 } else {
                     Ok(Request::Get(params[1].to_owned()))
+                }
+            }
+            "exists" => {
+                if params.len() < 2 {
+                    Err(ClientError::WrongNumberOfArguments("exists".to_string()))
+                } else {
+                    Ok(Request::Exists(params[1..].to_vec()))
                 }
             }
             c => Err(ClientError::UnknownCommand(c.to_string())),

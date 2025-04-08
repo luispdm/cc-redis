@@ -76,9 +76,10 @@ Problem: the same key is retrieved multiple times. Look into `choose_multiple` a
 After reading the documentation of `choose_multiple` and `rand`, I decided to stick with `sample` for now, as the sample size is small.
 In case the sample size is increased, it might be worth differentiate the algorithm and use one function or another, as when the length of the map is big and sample size is close to the length of the map, `choose_multiple`'s performance is better.
 
-Active expiration tests added.
+Active expiration tests added. `EXISTS` added.
 
 TODO:
 - check memory and CPU usage of the active expiration
 - think about how to organize parser and cmd
+- `EXISTS` tests
 </details>

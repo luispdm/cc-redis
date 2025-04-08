@@ -1,7 +1,10 @@
 ## 2024-03-28
+<details>
 Redis is not able to handle a benchmark with 50 clients and 10k requests. Many threads return: `failed to read from socket: Connection reset by peer`. Trying to use `RwLock` instead of `Mutex`: read performance increases (with less than 10k requests) but the issue persists. Realized that `tokio::sync::Mutex` or `tokio::sync::RwLock` are not required as the struct is not held over an `await` point. Using `std::sync::Mutex` doesn't solve the issue.
+</details>
 
 ## 2024-03-29
+<details>
 Ok, debug time. Just return a simple string instead of deserializing and processing the message. Surprise surprise, the benchmark holds.
 Now only deserialize... BAM! Benchmark can't complete.
 
@@ -12,8 +15,10 @@ Performance is good, even better than the original Redis, but while the original
 TODO:
 - evaluate `std::sync::Mutex` over `tokio::sync::Mutex` for the performance side of things
 - investigate how to reduce the CPU usage
+</details>
 
 ## 2024-04-01
+<details>
 Added the missing tests for the `GET` command. Fixed the `PING` and `ECHO` tests.
 
 Advancing to [step #5](https://codingchallenges.fyi/challenges/challenge-redis/#step-5). After reading the Redis docs and digging online, I currently see three ways to implement the expiration policy:
@@ -46,11 +51,16 @@ The main pain-point of #3 is the space used. Let us assume that in the worst-cas
 Each `String` takes: 60 bytes + 24 bytes for pointer, length and capacity. Total space taken per key: 100 bytes.
 
 10M keys * 100 bytes = 1GB of memory/storage used. This might be acceptable in certain scenarios.
+</details>
 
 ## 2024-04-02
+<details>
 For now I decided to go with #1: store expiration as part of the value. Passive expiration implemented. Some bugs fixed and tests added
+</details>
 
 ## 2024-04-03
+<details>
+
 Realized that iteration over HashMap is not random on the same program execution by just using `.iter().take(n)`. Either use a separate data structure or change strategy.
 
 A `Vec` would work as a separate data structure but it would be unfeasible for removals on `GET` requests (i.e. passive expiration).
@@ -58,3 +68,13 @@ A `Vec` would work as a separate data structure but it would be unfeasible for r
 Found that the crates `indexmap` and `rand` might give me what I need. Algorithm implemented, not tested yet.
 
 Problem: the same key is retrieved multiple times. Look into `choose_multiple` and `sample` of `rand`
+</details>
+
+## 2024-04-08
+<details>
+
+After reading the documentation of `choose_multiple` and `rand`, I decided to stick with `sample` for now, as the sample size is small.
+In case the sample size is increased, it might be worth differentiate the algorithm and use one function or another, as when the length of the map is big and sample size is close to the length of the map, `choose_multiple`'s performance is better.
+
+TODO: check memory and CPU usage of the active expiration
+</details>

@@ -4,11 +4,12 @@ mod deserializer;
 mod resp;
 
 use std::{
-    sync::{Arc, Mutex}, time::Duration,
+    sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use cmd::{request::Request, response::Response};
-use db::{remove_expired_entries, Db, Object};
+use db::{Db, Object, remove_expired_entries};
 use deserializer::Deserializer;
 
 use indexmap::IndexMap;
@@ -20,8 +21,6 @@ use tokio::{
     net::TcpListener,
 };
 
-const STOP_THRESHOLD: f64 = 0.25;
-
 #[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
@@ -31,10 +30,11 @@ async fn main() -> io::Result<()> {
     let expiry_db = Arc::clone(&db);
     tokio::spawn(async move {
         let sample_size = 100u64;
+        let stop_threshold = 0.25f64;
 
         loop {
             let mut ratio = 1.0f64;
-            while ratio > STOP_THRESHOLD {
+            while ratio > stop_threshold {
                 ratio = remove_expired_entries(&expiry_db, sample_size as usize);
             }
 

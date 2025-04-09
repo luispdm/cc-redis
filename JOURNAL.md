@@ -81,5 +81,10 @@ Active expiration tests added. `EXISTS` added.
 TODO:
 - check memory and CPU usage of the active expiration
 - think about how to organize parser and cmd
-- `EXISTS` tests
+</details>
+
+## 2024-04-09
+<details>
+
+`SET` tests, `EXISTS` tests and `DEL` command.
 </details>

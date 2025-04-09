@@ -1,7 +1,11 @@
 use std::time::SystemTime;
 
 use crate::{
-    cmd::{parser::set::Set, response::Response},
+    cmd::{
+        commands::{DEL, ECHO, EXISTS, GET, PING, SET},
+        parser::set::Set,
+        response::Response,
+    },
     db::{Db, Object},
 };
 use thiserror::Error;
@@ -106,44 +110,44 @@ impl TryFrom<Vec<String>> for Request {
         }
 
         match params[0].to_lowercase().as_str() {
-            "ping" => {
+            PING => {
                 if params.len() > 2 {
-                    Err(ClientError::WrongNumberOfArguments("ping".to_string()))
+                    Err(ClientError::WrongNumberOfArguments(PING.to_string()))
                 } else {
                     Ok(Request::Ping(params.get(1).cloned()))
                 }
             }
-            "echo" => {
+            ECHO => {
                 if params.len() != 2 {
-                    Err(ClientError::WrongNumberOfArguments("echo".to_string()))
+                    Err(ClientError::WrongNumberOfArguments(ECHO.to_string()))
                 } else {
                     Ok(Request::Echo(params[1].to_owned()))
                 }
             }
-            "set" => {
+            SET => {
                 if params.len() == 1 {
-                    Err(ClientError::WrongNumberOfArguments("set".to_string()))
+                    Err(ClientError::WrongNumberOfArguments(SET.to_string()))
                 } else {
                     Ok(Set::parse(params[1..].to_vec()).map(Request::Set))?
                 }
             }
-            "get" => {
+            GET => {
                 if params.len() != 2 {
-                    Err(ClientError::WrongNumberOfArguments("get".to_string()))
+                    Err(ClientError::WrongNumberOfArguments(GET.to_string()))
                 } else {
                     Ok(Request::Get(params[1].to_owned()))
                 }
             }
-            "exists" => {
+            EXISTS => {
                 if params.len() < 2 {
-                    Err(ClientError::WrongNumberOfArguments("exists".to_string()))
+                    Err(ClientError::WrongNumberOfArguments(EXISTS.to_string()))
                 } else {
                     Ok(Request::Exists(params[1..].to_vec()))
                 }
             }
-            "del" => {
+            DEL => {
                 if params.len() < 2 {
-                    Err(ClientError::WrongNumberOfArguments("del".to_string()))
+                    Err(ClientError::WrongNumberOfArguments(DEL.to_string()))
                 } else {
                     Ok(Request::Del(params[1..].to_vec()))
                 }
@@ -163,17 +167,17 @@ mod tests {
 
     #[test]
     fn del_one_arg() {
-        let params = vec!["del".to_string()];
+        let params = vec![DEL.to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(
             cmd.unwrap_err(),
-            ClientError::WrongNumberOfArguments("del".to_string())
+            ClientError::WrongNumberOfArguments(DEL.to_string())
         );
     }
 
     #[test]
     fn del_ok() {
-        let params = vec!["del".to_string(), "key".to_string(), "key2".to_string()];
+        let params = vec![DEL.to_string(), "key".to_string(), "key2".to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(
             cmd.unwrap(),
@@ -183,17 +187,17 @@ mod tests {
 
     #[test]
     fn exists_one_arg() {
-        let params = vec!["exists".to_string()];
+        let params = vec![EXISTS.to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(
             cmd.unwrap_err(),
-            ClientError::WrongNumberOfArguments("exists".to_string())
+            ClientError::WrongNumberOfArguments(EXISTS.to_string())
         );
     }
 
     #[test]
     fn exists_ok() {
-        let params = vec!["exists".to_string(), "key".to_string(), "key2".to_string()];
+        let params = vec![EXISTS.to_string(), "key".to_string(), "key2".to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(
             cmd.unwrap(),
@@ -203,17 +207,17 @@ mod tests {
 
     #[test]
     fn set_one_arg() {
-        let params = vec!["set".to_string()];
+        let params = vec![SET.to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(
             cmd.unwrap_err(),
-            ClientError::WrongNumberOfArguments("set".to_string())
+            ClientError::WrongNumberOfArguments(SET.to_string())
         );
     }
 
     #[test]
     fn set_ok() {
-        let params = vec!["set".to_string(), "key".to_string(), "".to_string()];
+        let params = vec![SET.to_string(), "key".to_string(), "".to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(
             cmd.unwrap(),
@@ -227,69 +231,69 @@ mod tests {
 
     #[test]
     fn get_no_args() {
-        let params = vec!["GET".to_string()];
+        let params = vec![GET.to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(
             cmd.unwrap_err(),
-            ClientError::WrongNumberOfArguments("get".to_string())
+            ClientError::WrongNumberOfArguments(GET.to_string())
         );
     }
 
     #[test]
     fn get_ok() {
-        let params = vec!["GET".to_string(), "key".to_string()];
+        let params = vec![GET.to_string(), "key".to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(cmd.unwrap(), Request::Get("key".to_string()));
     }
 
     #[test]
     fn ping_no_args() {
-        let params = vec!["PING".to_string()];
+        let params = vec![PING.to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(cmd.unwrap(), Request::Ping(None));
     }
 
     #[test]
     fn ping_with_arg() {
-        let params = vec!["PING".to_string(), "hello".to_string()];
+        let params = vec![PING.to_string(), "hello".to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(cmd.unwrap(), Request::Ping(Some("hello".to_string())));
     }
 
     #[test]
     fn ping_too_many_args() {
-        let params = vec!["PING".to_string(), "arg1".to_string(), "arg2".to_string()];
+        let params = vec![PING.to_string(), "arg1".to_string(), "arg2".to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(
             cmd.unwrap_err(),
-            ClientError::WrongNumberOfArguments("ping".to_string())
+            ClientError::WrongNumberOfArguments(PING.to_string())
         );
     }
 
     #[test]
     fn echo_ok() {
-        let params = vec!["ECHO".to_string(), "hello world".to_string()];
+        let params = vec![ECHO.to_string(), "hello world".to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(cmd.unwrap(), Request::Echo("hello world".to_string()));
     }
 
     #[test]
     fn echo_no_args() {
-        let params = vec!["ECHO".to_string()];
+        let params = vec![ECHO.to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(
             cmd.unwrap_err(),
-            ClientError::WrongNumberOfArguments("echo".to_string())
+            ClientError::WrongNumberOfArguments(ECHO.to_string())
         );
     }
 
     #[test]
     fn echo_too_many_args() {
-        let params = vec!["ECHO".to_string(), "arg1".to_string(), "arg2".to_string()];
+        let params = vec![ECHO.to_string(), "arg1".to_string(), "arg2".to_string()];
         let cmd = Request::try_from(params);
         assert_eq!(
             cmd.unwrap_err(),
-            ClientError::WrongNumberOfArguments("echo".to_string())
+            ClientError::WrongNumberOfArguments(ECHO.to_string())
         );
     }
 
@@ -305,7 +309,7 @@ mod tests {
 
     #[test]
     fn case_insensitive_commands() {
-        let ping_lowercase = vec!["ping".to_string()];
+        let ping_lowercase = vec![PING.to_string()];
         let ping_uppercase = vec!["PING".to_string()];
         let ping_mixed_case = vec!["PiNg".to_string()];
 

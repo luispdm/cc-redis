@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::cmd::request::ClientError; // TODO circular dependency?
+use crate::cmd::{commands::SET, request::ClientError}; // TODO cyclic dependency?
 
 #[derive(Debug, PartialEq)]
 pub struct Set {
@@ -12,7 +12,7 @@ pub struct Set {
 impl Set {
     pub fn parse(params: Vec<String>) -> Result<Self, ClientError> {
         if params.len() < 2 {
-            return Err(ClientError::WrongNumberOfArguments("set".to_string()));
+            return Err(ClientError::WrongNumberOfArguments(SET.to_string()));
         }
         if params.len() == 3 || params.len() > 4 {
             return Err(ClientError::SyntaxError);
@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn parse_one_arg() {
         assert_eq!(
-            ClientError::WrongNumberOfArguments("set".to_string()),
+            ClientError::WrongNumberOfArguments(SET.to_string()),
             Set::parse(vec!["".to_string()]).unwrap_err()
         );
     }

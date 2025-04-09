@@ -65,8 +65,8 @@ mod tests {
         let reply = Response::SimpleString("".to_string());
         assert_eq!(reply.serialize(), b"+\r\n");
 
-        let reply = Response::SimpleString("OK".to_string());
-        assert_eq!(reply.serialize(), b"+OK\r\n");
+        let reply = Response::SimpleString("UPPERCASE".to_string());
+        assert_eq!(reply.serialize(), b"+UPPERCASE\r\n");
 
         let reply = Response::SimpleString("Hello World".to_string());
         assert_eq!(reply.serialize(), b"+Hello World\r\n");

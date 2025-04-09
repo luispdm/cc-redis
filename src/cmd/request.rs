@@ -282,6 +282,18 @@ mod tests {
     }
 
     #[test]
+    fn execute_set_ok() {
+        let set = Set {
+            key: "key".to_string(),
+            value: "".to_string(),
+            expiration: None
+        };
+        let cmd = Request::Set(set);
+        let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
+        assert_eq!(reply, Response::SimpleString("OK".to_string()));
+    }
+
+    #[test]
     fn execute_get_null() {
         let cmd = Request::Get("key".to_string());
         let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));

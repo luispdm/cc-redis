@@ -141,6 +141,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn set_one_arg() {
+        let params = vec!["set".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments("set".to_string())
+        );
+    }
+
+    #[test]
+    fn set_ok() {
+        let params = vec!["set".to_string(), "key".to_string(), "".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap(),
+            Request::Set(Set {
+                key: "key".to_string(),
+                value: "".to_string(),
+                expiration: None
+            })
+        );
+    }
+
+    #[test]
     fn get_no_args() {
         let params = vec!["GET".to_string()];
         let cmd = Request::try_from(params);

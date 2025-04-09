@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::cmd::{commands::SET, request::ClientError}; // TODO cyclic dependency?
+use crate::cmd::{types::SET, error::ClientError};
 
 #[derive(Debug, PartialEq)]
 pub struct Set {

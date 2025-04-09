@@ -125,14 +125,12 @@ fn get_u32_from_string(s: &[u8]) -> Result<u32, ParseIntError> {
 
 #[cfg(test)]
 mod tests {
-    use crate::cmd::commands::SET;
-
     use super::*;
 
     #[test]
     fn deserialize_ok() {
-        let msg = b"*3\r\n$3\r\nset\r\n$3\r\nkey\r\n$5\r\nvalue\r\n";
-        let expected_params = vec![SET, "key", "value"];
+        let msg = b"*3\r\n$3\r\nits\r\n$3\r\nkey\r\n$5\r\nvalue\r\n";
+        let expected_params = vec!["its", "key", "value"];
         let mut deserializer = Deserializer::default();
         assert_eq!(expected_params, deserializer.deserialize_msg(msg).unwrap());
 

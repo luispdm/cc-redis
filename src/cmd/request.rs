@@ -25,6 +25,7 @@ pub enum Request {
     Get(String),
     Set(Set),
     Exists(Vec<String>),
+    Del(Vec<String>),
 }
 
 impl Request {
@@ -79,6 +80,19 @@ impl Request {
 
                 Response::Integer(existing_keys.to_string())
             }
+
+            Self::Del(keys) => {
+                let mut map = db.lock().unwrap();
+                let mut deleted_keys = 0u64;
+
+                for k in keys {
+                    if map.swap_remove(&k).is_some() {
+                        deleted_keys += 1;
+                    }
+                }
+
+                Response::Integer(deleted_keys.to_string())
+            }
         }
     }
 }
@@ -127,6 +141,13 @@ impl TryFrom<Vec<String>> for Request {
                     Ok(Request::Exists(params[1..].to_vec()))
                 }
             }
+            "del" => {
+                if params.len() < 2 {
+                    Err(ClientError::WrongNumberOfArguments("del".to_string()))
+                } else {
+                    Ok(Request::Del(params[1..].to_vec()))
+                }
+            }
             c => Err(ClientError::UnknownCommand(c.to_string())),
         }
     }
@@ -139,6 +160,26 @@ mod tests {
     use indexmap::IndexMap;
 
     use super::*;
+
+    #[test]
+    fn del_one_arg() {
+        let params = vec!["del".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments("del".to_string())
+        );
+    }
+
+    #[test]
+    fn del_ok() {
+        let params = vec!["del".to_string(), "key".to_string(), "key2".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap(),
+            Request::Del(vec!["key".to_string(), "key2".to_string()])
+        );
+    }
 
     #[test]
     fn exists_one_arg() {
@@ -449,5 +490,49 @@ mod tests {
         let cmd = Request::Exists(vec!["key".to_string(), "key2".to_string()]);
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("1".to_string()));
+    }
+
+    #[test]
+    fn execute_del_zero() {
+        let cmd = Request::Del(vec!["key".to_string()]);
+        let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
+        assert_eq!(reply, Response::Integer("0".to_string()));
+    }
+
+    #[test]
+    fn execute_del_one() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock()
+            .unwrap()
+            .insert("key".to_string(), Object::new("value".to_string(), None));
+        let cmd = Request::Del(vec!["key".to_string()]);
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("1".to_string()));
+    }
+
+    #[test]
+    fn execute_del_one_multiple_times() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock()
+            .unwrap()
+            .insert("key".to_string(), Object::new("value".to_string(), None));
+        let cmd = Request::Del(vec!["key".to_string(), "key".to_string()]);
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("1".to_string()));
+    }
+
+    #[test]
+    fn execute_del_multiple() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock()
+            .unwrap()
+            .insert("key".to_string(), Object::new("value".to_string(), None));
+        db.lock().unwrap().insert(
+            "key2".to_string(),
+            Object::new("".to_string(), Some(SystemTime::now())),
+        );
+        let cmd = Request::Del(vec!["key".to_string(), "key2".to_string()]);
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("2".to_string()));
     }
 }

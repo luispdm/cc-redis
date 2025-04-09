@@ -86,5 +86,5 @@ TODO:
 ## 2024-04-09
 <details>
 
-`SET` tests, `EXISTS` tests and `DEL` command. Small refactor for string commands.
+`SET` tests, `EXISTS` tests and `DEL` command. Some refactoring: command constant types, client error moved to error file.
 </details>

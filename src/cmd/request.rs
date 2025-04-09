@@ -141,6 +141,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn exists_one_arg() {
+        let params = vec!["exists".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments("exists".to_string())
+        );
+    }
+
+    #[test]
+    fn exists_ok() {
+        let params = vec!["exists".to_string(), "key".to_string(), "key2".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(cmd.unwrap(), Request::Exists(vec!["key".to_string(), "key2".to_string()]));
+    }
+
+    #[test]
     fn set_one_arg() {
         let params = vec!["set".to_string()];
         let cmd = Request::try_from(params);

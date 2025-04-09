@@ -154,7 +154,10 @@ mod tests {
     fn exists_ok() {
         let params = vec!["exists".to_string(), "key".to_string(), "key2".to_string()];
         let cmd = Request::try_from(params);
-        assert_eq!(cmd.unwrap(), Request::Exists(vec!["key".to_string(), "key2".to_string()]));
+        assert_eq!(
+            cmd.unwrap(),
+            Request::Exists(vec!["key".to_string(), "key2".to_string()])
+        );
     }
 
     #[test]
@@ -303,7 +306,7 @@ mod tests {
         let set = Set {
             key: "key".to_string(),
             value: "".to_string(),
-            expiration: None
+            expiration: None,
         };
         let cmd = Request::Set(set);
         let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
@@ -357,5 +360,94 @@ mod tests {
         let cmd = Request::Get("key".to_string());
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::BulkString("value".to_string()));
+    }
+
+    #[test]
+    fn execute_exists_zero() {
+        let cmd = Request::Exists(vec!["key".to_string()]);
+        let reply = cmd.execute(&Db::new(Mutex::new(IndexMap::new())));
+        assert_eq!(reply, Response::Integer("0".to_string()));
+    }
+
+    #[test]
+    fn execute_exists_no_expiration() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock()
+            .unwrap()
+            .insert("key".to_string(), Object::new("value".to_string(), None));
+        let cmd = Request::Exists(vec!["key".to_string()]);
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("1".to_string()));
+    }
+
+    #[test]
+    fn execute_exists_same_key_twice() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock()
+            .unwrap()
+            .insert("key".to_string(), Object::new("value".to_string(), None));
+        let cmd = Request::Exists(vec!["key".to_string(), "key".to_string()]);
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("2".to_string()));
+    }
+
+    #[test]
+    fn execute_exists_not_expired() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new(
+                "value".to_string(),
+                Some(
+                    SystemTime::now()
+                        .checked_add(Duration::from_secs(100))
+                        .unwrap(),
+                ),
+            ),
+        );
+        let cmd = Request::Exists(vec!["key".to_string()]);
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("1".to_string()));
+    }
+
+    #[test]
+    fn execute_exists_expired() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new("value".to_string(), Some(SystemTime::now())),
+        );
+        let cmd = Request::Exists(vec!["key".to_string()]);
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("0".to_string()));
+    }
+
+    #[test]
+    fn execute_exists_multiple_keys() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock()
+            .unwrap()
+            .insert("key".to_string(), Object::new("value".to_string(), None));
+        db.lock()
+            .unwrap()
+            .insert("key2".to_string(), Object::new("".to_string(), None));
+        let cmd = Request::Exists(vec!["key".to_string(), "key2".to_string()]);
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("2".to_string()));
+    }
+
+    #[test]
+    fn execute_exists_multiple_keys_one_expired() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock()
+            .unwrap()
+            .insert("key".to_string(), Object::new("value".to_string(), None));
+        db.lock().unwrap().insert(
+            "key2".to_string(),
+            Object::new("".to_string(), Some(SystemTime::now())),
+        );
+        let cmd = Request::Exists(vec!["key".to_string(), "key2".to_string()]);
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("1".to_string()));
     }
 }

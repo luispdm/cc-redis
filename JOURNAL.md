@@ -88,3 +88,9 @@ TODO:
 
 `SET` tests, `EXISTS` tests and `DEL` command. Some refactoring: command constant types, client error moved to error file.
 </details>
+
+## 2024-04-10
+<details>
+
+Made types mod private. Digged a bit into the other commands to understand how to properly store integers and lists. Most likely the value will be changed from `String` to `enum`, with variants being: `String`, `i64` and (probably) `VecDeque`.
+</details>

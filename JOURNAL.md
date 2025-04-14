@@ -98,5 +98,5 @@ Made types mod private. Digged a bit into the other commands to understand how t
 ## 2024-04-14
 <details>
 
-Expiration logic moved to `Db`.
+Expiration logic moved to `Db`. Change `Object` value to `enum`.
 </details>

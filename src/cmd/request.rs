@@ -143,6 +143,8 @@ mod tests {
 
     use indexmap::IndexMap;
 
+    use crate::db::Value;
+
     use super::*;
 
     #[test]
@@ -203,7 +205,7 @@ mod tests {
             cmd.unwrap(),
             Request::Set(Set {
                 key: "key".to_string(),
-                value: "".to_string(),
+                value: Value::String("".to_string()),
                 expiration: None
             })
         );
@@ -330,7 +332,7 @@ mod tests {
     fn execute_set_ok() {
         let set = Set {
             key: "key".to_string(),
-            value: "".to_string(),
+            value: Value::String("".to_string()),
             expiration: None,
         };
         let cmd = Request::Set(set);
@@ -350,7 +352,7 @@ mod tests {
         let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock()
             .unwrap()
-            .insert("key".to_string(), Object::new("value".to_string(), None));
+            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
         let cmd = Request::Get("key".to_string());
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::BulkString("value".to_string()));
@@ -361,7 +363,7 @@ mod tests {
         let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock().unwrap().insert(
             "key".to_string(),
-            Object::new("value".to_string(), Some(SystemTime::now())),
+            Object::new(Value::String("value".to_string()), Some(SystemTime::now())),
         );
         let cmd = Request::Get("key".to_string());
         let reply = cmd.execute(&db);
@@ -374,7 +376,7 @@ mod tests {
         db.lock().unwrap().insert(
             "key".to_string(),
             Object::new(
-                "value".to_string(),
+                Value::String("value".to_string()),
                 Some(
                     SystemTime::now()
                         .checked_add(Duration::from_secs(10))
@@ -399,7 +401,7 @@ mod tests {
         let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock()
             .unwrap()
-            .insert("key".to_string(), Object::new("value".to_string(), None));
+            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
         let cmd = Request::Exists(vec!["key".to_string()]);
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("1".to_string()));
@@ -410,7 +412,7 @@ mod tests {
         let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock()
             .unwrap()
-            .insert("key".to_string(), Object::new("value".to_string(), None));
+            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
         let cmd = Request::Exists(vec!["key".to_string(), "key".to_string()]);
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("2".to_string()));
@@ -422,7 +424,7 @@ mod tests {
         db.lock().unwrap().insert(
             "key".to_string(),
             Object::new(
-                "value".to_string(),
+                Value::String("value".to_string()),
                 Some(
                     SystemTime::now()
                         .checked_add(Duration::from_secs(100))
@@ -440,7 +442,7 @@ mod tests {
         let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock().unwrap().insert(
             "key".to_string(),
-            Object::new("value".to_string(), Some(SystemTime::now())),
+            Object::new(Value::String("value".to_string()), Some(SystemTime::now())),
         );
         let cmd = Request::Exists(vec!["key".to_string()]);
         let reply = cmd.execute(&db);
@@ -452,10 +454,10 @@ mod tests {
         let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock()
             .unwrap()
-            .insert("key".to_string(), Object::new("value".to_string(), None));
+            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
         db.lock()
             .unwrap()
-            .insert("key2".to_string(), Object::new("".to_string(), None));
+            .insert("key2".to_string(), Object::new(Value::String("".to_string()), None));
         let cmd = Request::Exists(vec!["key".to_string(), "key2".to_string()]);
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("2".to_string()));
@@ -466,10 +468,10 @@ mod tests {
         let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock()
             .unwrap()
-            .insert("key".to_string(), Object::new("value".to_string(), None));
+            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
         db.lock().unwrap().insert(
             "key2".to_string(),
-            Object::new("".to_string(), Some(SystemTime::now())),
+            Object::new(Value::String("".to_string()), Some(SystemTime::now())),
         );
         let cmd = Request::Exists(vec!["key".to_string(), "key2".to_string()]);
         let reply = cmd.execute(&db);
@@ -488,7 +490,7 @@ mod tests {
         let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock()
             .unwrap()
-            .insert("key".to_string(), Object::new("value".to_string(), None));
+            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
         let cmd = Request::Del(vec!["key".to_string()]);
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("1".to_string()));
@@ -499,7 +501,7 @@ mod tests {
         let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock()
             .unwrap()
-            .insert("key".to_string(), Object::new("value".to_string(), None));
+            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
         let cmd = Request::Del(vec!["key".to_string(), "key".to_string()]);
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("1".to_string()));
@@ -510,10 +512,10 @@ mod tests {
         let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock()
             .unwrap()
-            .insert("key".to_string(), Object::new("value".to_string(), None));
+            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
         db.lock().unwrap().insert(
             "key2".to_string(),
-            Object::new("".to_string(), Some(SystemTime::now())),
+            Object::new(Value::String("".to_string()), Some(SystemTime::now())),
         );
         let cmd = Request::Del(vec!["key".to_string(), "key2".to_string()]);
         let reply = cmd.execute(&db);

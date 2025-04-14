@@ -1,11 +1,14 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::cmd::{types::SET, error::ClientError};
+use crate::{
+    cmd::{error::ClientError, types::SET},
+    db::Value,
+};
 
 #[derive(Debug, PartialEq)]
 pub struct Set {
     pub key: String,
-    pub value: String,
+    pub value: Value,
     pub expiration: Option<SystemTime>,
 }
 
@@ -18,7 +21,11 @@ impl Set {
             return Err(ClientError::SyntaxError);
         }
         let key = params[0].to_owned();
-        let value = params[1].to_owned();
+        // TODO cover this in the tests
+        let value = params[1]
+            .parse::<i64>()
+            .map_or(Value::String(params[1].to_owned()), Value::Integer);
+
         let expiration = if params.len() == 4 {
             match Expiration::try_from((params[2].to_owned(), params[3].to_owned())) {
                 Ok(exp) => Some(exp.0),
@@ -112,7 +119,7 @@ mod tests {
         assert_eq!(
             Set {
                 key: "key".to_string(),
-                value: "value".to_string(),
+                value: Value::String("value".to_string()),
                 expiration: None
             },
             Set::parse(params).unwrap()
@@ -130,7 +137,7 @@ mod tests {
         assert_eq!(
             Set {
                 key: "key".to_string(),
-                value: "value".to_string(),
+                value: Value::String("value".to_string()),
                 expiration: Some(UNIX_EPOCH.checked_add(Duration::from_secs(10)).unwrap())
             },
             Set::parse(params).unwrap()

@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     sync::{Arc, Mutex},
     time::SystemTime,
 };
@@ -7,13 +8,28 @@ use indexmap::IndexMap;
 use log::trace;
 use rand::{rng, seq::index::sample};
 
+#[derive(Debug, PartialEq)]
+pub enum Value {
+    Integer(i64),
+    String(String),
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Integer(i) => write!(f, "{}", i),
+            Value::String(s) => write!(f, "{}", s),
+        }
+    }
+}
+
 pub struct Object {
-    pub value: String,
+    pub value: Value,
     pub expiration: Option<SystemTime>,
 }
 
 impl Object {
-    pub fn new(value: String, expiration: Option<SystemTime>) -> Self {
+    pub fn new(value: Value, expiration: Option<SystemTime>) -> Self {
         Self { value, expiration }
     }
 }
@@ -95,7 +111,7 @@ mod test {
         });
 
         Object {
-            value: value.to_string(),
+            value: Value::String(value.to_string()),
             expiration,
         }
     }
@@ -125,7 +141,7 @@ mod test {
         let status = ExpirationStatus::get(map.get("key"));
         match status {
             ExpirationStatus::NotExpired(returned_obj) => {
-                assert_eq!(returned_obj.value, "value");
+                assert_eq!(returned_obj.value, Value::String("value".to_string()));
                 assert!(returned_obj.expiration.is_none());
             }
             _ => panic!("Expected NotExpired variant"),
@@ -154,7 +170,7 @@ mod test {
 
         match status {
             ExpirationStatus::NotExpired(returned_obj) => {
-                assert_eq!(returned_obj.value, "value");
+                assert_eq!(returned_obj.value, Value::String("value".to_string()));
                 assert_eq!(returned_obj.expiration, Some(expiration_time));
             }
             _ => panic!("Expected NotExpired variant"),

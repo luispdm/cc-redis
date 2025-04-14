@@ -34,7 +34,7 @@ impl Request {
             Self::Get(key) => {
                 let mut map = db.lock().unwrap();
 
-                match ExpirationStatus::get(&map, &key) {
+                match ExpirationStatus::get(map.get(&key)) {
                     ExpirationStatus::NotExist => Response::Null,
                     ExpirationStatus::NotExpired(obj) => {
                         Response::BulkString(obj.value.to_string())
@@ -50,7 +50,7 @@ impl Request {
                 let mut existing_keys = 0u64;
 
                 for k in keys {
-                    match ExpirationStatus::get(&map, &k) {
+                    match ExpirationStatus::get(map.get(&k)) {
                         ExpirationStatus::NotExist => continue,
                         ExpirationStatus::NotExpired(_) => existing_keys += 1,
                         ExpirationStatus::Expired => {

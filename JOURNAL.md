@@ -94,3 +94,9 @@ TODO:
 
 Made types mod private. Digged a bit into the other commands to understand how to properly store integers and lists. Most likely the value will be changed from `String` to `enum`, with variants being: `String`, `i64` and (probably) `VecDeque`.
 </details>
+
+## 2024-04-14
+<details>
+
+Expiration logic moved to `Db`.
+</details>

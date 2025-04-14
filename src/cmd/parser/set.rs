@@ -20,8 +20,8 @@ impl Set {
         if params.len() == 3 || params.len() > 4 {
             return Err(ClientError::SyntaxError);
         }
+
         let key = params[0].to_owned();
-        // TODO cover this in the tests
         let value = params[1]
             .parse::<i64>()
             .map_or(Value::String(params[1].to_owned()), Value::Integer);
@@ -127,6 +127,19 @@ mod tests {
     }
 
     #[test]
+    fn parse_two_args_num() {
+        let params = vec!["key".to_string(), "1".to_string()];
+        assert_eq!(
+            Set {
+                key: "key".to_string(),
+                value: Value::Integer(1),
+                expiration: None
+            },
+            Set::parse(params).unwrap()
+        );
+    }
+
+    #[test]
     fn parse_four_args() {
         let params = vec![
             "key".to_string(),
@@ -138,6 +151,24 @@ mod tests {
             Set {
                 key: "key".to_string(),
                 value: Value::String("value".to_string()),
+                expiration: Some(UNIX_EPOCH.checked_add(Duration::from_secs(10)).unwrap())
+            },
+            Set::parse(params).unwrap()
+        );
+    }
+
+    #[test]
+    fn parse_four_args_num() {
+        let params = vec![
+            "key".to_string(),
+            "-1".to_string(),
+            "exat".to_string(),
+            "10".to_string(),
+        ];
+        assert_eq!(
+            Set {
+                key: "key".to_string(),
+                value: Value::Integer(-1),
                 expiration: Some(UNIX_EPOCH.checked_add(Duration::from_secs(10)).unwrap())
             },
             Set::parse(params).unwrap()

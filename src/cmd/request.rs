@@ -1,13 +1,11 @@
-use std::time::SystemTime;
-
 use crate::{
     cmd::{
         error::ClientError,
-        types::{DEL, ECHO, EXISTS, GET, PING, SET},
         parser::set::Set,
         response::Response,
+        types::{DEL, ECHO, EXISTS, GET, PING, SET},
     },
-    db::{Db, Object},
+    db::{Db, ExpirationStatus, Object},
 };
 
 #[derive(Debug, PartialEq)]
@@ -35,37 +33,28 @@ impl Request {
             }
             Self::Get(key) => {
                 let mut map = db.lock().unwrap();
-                let object = match map.get(&key) {
-                    Some(o) => o,
-                    None => return Response::Null,
-                };
 
-                match object.expiration {
-                    None => Response::BulkString(object.value.to_string()),
-                    Some(exp) => match exp.duration_since(SystemTime::now()) {
-                        Ok(_) => Response::BulkString(object.value.to_string()),
-                        _ => {
-                            map.swap_remove(&key);
-                            Response::Null
-                        }
-                    },
+                match ExpirationStatus::get(&map, &key) {
+                    ExpirationStatus::NotExist => Response::Null,
+                    ExpirationStatus::NotExpired(obj) => {
+                        Response::BulkString(obj.value.to_string())
+                    }
+                    ExpirationStatus::Expired => {
+                        map.swap_remove(&key);
+                        Response::Null
+                    }
                 }
             }
             Self::Exists(keys) => {
                 let mut map = db.lock().unwrap();
                 let mut existing_keys = 0u64;
-                let now = SystemTime::now();
 
                 for k in keys {
-                    if let Some(object) = map.get(&k) {
-                        let expired = object
-                            .expiration
-                            .is_some_and(|exp| now.duration_since(exp).is_ok());
-
-                        if expired {
+                    match ExpirationStatus::get(&map, &k) {
+                        ExpirationStatus::NotExist => continue,
+                        ExpirationStatus::NotExpired(_) => existing_keys += 1,
+                        ExpirationStatus::Expired => {
                             map.swap_remove(&k);
-                        } else {
-                            existing_keys += 1;
                         }
                     }
                 }
@@ -147,7 +136,10 @@ impl TryFrom<Vec<String>> for Request {
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::Mutex, time::Duration};
+    use std::{
+        sync::Mutex,
+        time::{Duration, SystemTime},
+    };
 
     use indexmap::IndexMap;
 

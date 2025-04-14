@@ -1,5 +1,5 @@
 use std::{
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::SystemTime,
 };
 
@@ -53,6 +53,31 @@ pub fn remove_expired_entries(db: &Db, sample_size: usize) -> f64 {
     keys.len() as f64 / sample_size as f64
 }
 
+pub enum ExpirationStatus<'a> {
+    NotExist,
+    Expired,
+    NotExpired(&'a Object)
+}
+
+impl<'a> ExpirationStatus<'a> {
+    pub fn get(map: &'a MutexGuard<'_, IndexMap<String, Object>>, key: &str) -> Self {
+        let now = SystemTime::now();
+
+        match map.get(key) {
+            None => Self::NotExist,
+            Some(obj) => {
+                match obj.expiration {
+                    None => Self::NotExpired(obj),
+                    Some(exp) => match exp.duration_since(now) {
+                        Err(_) => Self::Expired,
+                        Ok(_) => Self::NotExpired(obj),
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::time::Duration;
@@ -82,6 +107,65 @@ mod test {
             map.insert(key, obj);
         }
         Arc::new(Mutex::new(map))
+    }
+
+    #[test]
+    fn expiration_status_not_exist() {
+        let db = create_test_db(vec![]);
+        let map = db.lock().unwrap();
+        let status = ExpirationStatus::get(&map, "key");
+        assert!(matches!(status, ExpirationStatus::NotExist));
+    }
+
+    #[test]
+    fn expiration_status_no_expiration() {
+        let entries = vec![
+            ("key".to_string(), create_object("value", None))
+        ];
+        let db = create_test_db(entries);
+        let map = db.lock().unwrap();
+        
+        let status = ExpirationStatus::get(&map, "key");
+        match status {
+            ExpirationStatus::NotExpired(returned_obj) => {
+                assert_eq!(returned_obj.value, "value");
+                assert!(returned_obj.expiration.is_none());
+            }
+            _ => panic!("Expected NotExpired variant"),
+        }
+    }
+
+    #[test]
+    fn expiration_status_expired() {
+        let entries = vec![
+            ("key".to_string(), create_object("value", Some(-1)))
+        ];
+        let db = create_test_db(entries);
+        let map = db.lock().unwrap();
+        
+        let status = ExpirationStatus::get(&map, "key");
+        assert!(matches!(status, ExpirationStatus::Expired));
+    }
+
+    #[test]
+    fn expiration_status_not_expired() {
+        let obj = create_object("value", Some(3600));
+        let expiration_time = obj.expiration.unwrap();
+        let entries = vec![
+            ("key".to_string(), obj)
+        ];
+        
+        let db = create_test_db(entries);
+        let map = db.lock().unwrap();
+        let status = ExpirationStatus::get(&map, "key");
+        
+        match status {
+            ExpirationStatus::NotExpired(returned_obj) => {
+                assert_eq!(returned_obj.value, "value");
+                assert_eq!(returned_obj.expiration, Some(expiration_time));
+            }
+            _ => panic!("Expected NotExpired variant"),
+        }
     }
 
     #[test]

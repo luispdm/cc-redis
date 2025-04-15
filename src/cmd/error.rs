@@ -10,4 +10,6 @@ pub enum ClientError {
     SyntaxError,
     #[error("value is not an integer or out of range")]
     IntegerError,
+    #[error("increment or decrement would overflow")]
+    OverflowError,
 }

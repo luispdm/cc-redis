@@ -100,3 +100,9 @@ Made types mod private. Digged a bit into the other commands to understand how t
 
 Expiration logic moved to `Db`. Change `Object` value to `enum`.
 </details>
+
+## 2024-04-15
+<details>
+
+First version of `Incr` implemented and expiration status moved to the object itself.
+</details>

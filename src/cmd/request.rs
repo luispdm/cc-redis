@@ -3,9 +3,9 @@ use crate::{
         error::ClientError,
         parser::set::Set,
         response::Response,
-        types::{DEL, ECHO, EXISTS, GET, PING, SET},
+        types::{DEL, ECHO, EXISTS, GET, INCR, PING, SET},
     },
-    db::{Db, ExpirationStatus, Object},
+    db::{Db, Object, Value},
 };
 
 #[derive(Debug, PartialEq)]
@@ -16,6 +16,7 @@ pub enum Request {
     Set(Set),
     Exists(Vec<String>),
     Del(Vec<String>),
+    Incr(String),
 }
 
 impl Request {
@@ -25,36 +26,38 @@ impl Request {
                 Response::SimpleString("PONG".to_string()),
                 Response::BulkString,
             ),
+
             Self::Echo(val) => Response::BulkString(val),
+
             Self::Set(set) => {
                 let mut map = db.lock().unwrap();
                 map.insert(set.key, Object::new(set.value, set.expiration));
                 Response::SimpleString("OK".to_string())
             }
+
             Self::Get(key) => {
                 let mut map = db.lock().unwrap();
 
-                match ExpirationStatus::get(map.get(&key)) {
-                    ExpirationStatus::NotExist => Response::Null,
-                    ExpirationStatus::NotExpired(obj) => {
-                        Response::BulkString(obj.value.to_string())
-                    }
-                    ExpirationStatus::Expired => {
+                match map.get(&key) {
+                    None => Response::Null,
+                    Some(o) if o.is_expired() => {
                         map.swap_remove(&key);
                         Response::Null
                     }
+                    Some(o) => Response::BulkString(o.value.to_string()),
                 }
             }
+
             Self::Exists(keys) => {
                 let mut map = db.lock().unwrap();
                 let mut existing_keys = 0u64;
 
                 for k in keys {
-                    match ExpirationStatus::get(map.get(&k)) {
-                        ExpirationStatus::NotExist => continue,
-                        ExpirationStatus::NotExpired(_) => existing_keys += 1,
-                        ExpirationStatus::Expired => {
+                    if let Some(o) = map.get(&k) {
+                        if o.is_expired() {
                             map.swap_remove(&k);
+                        } else {
+                            existing_keys += 1;
                         }
                     }
                 }
@@ -73,6 +76,42 @@ impl Request {
                 }
 
                 Response::Integer(deleted_keys.to_string())
+            }
+
+            // TODO test me
+            Self::Incr(key) => {
+                let mut map = db.lock().unwrap();
+                let one = 1i64;
+
+                match map.get(&key) {
+                    None => {
+                        map.insert(key, Object::new(Value::Integer(one), None));
+                        Response::Integer(one.to_string())
+                    }
+
+                    Some(obj) if obj.is_expired() => {
+                        map.swap_remove(&key);
+                        map.insert(key, Object::new(Value::Integer(one), None));
+
+                        Response::Integer(one.to_string())
+                    }
+
+                    Some(obj) => match obj.value {
+                        Value::Integer(i) => {
+                            // value moved to avoid borrowing issues
+                            let exp = obj.expiration;
+
+                            i.checked_add(1).map_or(
+                                Response::SimpleError(ClientError::OverflowError.to_string()),
+                                |v| {
+                                    map.insert(key, Object::new(Value::Integer(v), exp));
+                                    Response::Integer(v.to_string())
+                                },
+                            )
+                        }
+                        _ => Response::SimpleError(ClientError::IntegerError.to_string()),
+                    },
+                }
             }
         }
     }
@@ -127,6 +166,14 @@ impl TryFrom<Vec<String>> for Request {
                     Err(ClientError::WrongNumberOfArguments(DEL.to_string()))
                 } else {
                     Ok(Request::Del(params[1..].to_vec()))
+                }
+            }
+            // TODO test me
+            INCR => {
+                if params.len() != 2 {
+                    Err(ClientError::WrongNumberOfArguments(DEL.to_string()))
+                } else {
+                    Ok(Request::Incr(params[1].to_owned()))
                 }
             }
             c => Err(ClientError::UnknownCommand(c.to_string())),
@@ -350,9 +397,10 @@ mod tests {
     #[test]
     fn execute_get_no_expiration() {
         let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock()
-            .unwrap()
-            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new(Value::String("value".to_string()), None),
+        );
         let cmd = Request::Get("key".to_string());
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::BulkString("value".to_string()));
@@ -399,9 +447,10 @@ mod tests {
     #[test]
     fn execute_exists_no_expiration() {
         let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock()
-            .unwrap()
-            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new(Value::String("value".to_string()), None),
+        );
         let cmd = Request::Exists(vec!["key".to_string()]);
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("1".to_string()));
@@ -410,9 +459,10 @@ mod tests {
     #[test]
     fn execute_exists_same_key_twice() {
         let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock()
-            .unwrap()
-            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new(Value::String("value".to_string()), None),
+        );
         let cmd = Request::Exists(vec!["key".to_string(), "key".to_string()]);
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("2".to_string()));
@@ -452,12 +502,14 @@ mod tests {
     #[test]
     fn execute_exists_multiple_keys() {
         let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock()
-            .unwrap()
-            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
-        db.lock()
-            .unwrap()
-            .insert("key2".to_string(), Object::new(Value::String("".to_string()), None));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new(Value::String("value".to_string()), None),
+        );
+        db.lock().unwrap().insert(
+            "key2".to_string(),
+            Object::new(Value::String("".to_string()), None),
+        );
         let cmd = Request::Exists(vec!["key".to_string(), "key2".to_string()]);
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("2".to_string()));
@@ -466,9 +518,10 @@ mod tests {
     #[test]
     fn execute_exists_multiple_keys_one_expired() {
         let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock()
-            .unwrap()
-            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new(Value::String("value".to_string()), None),
+        );
         db.lock().unwrap().insert(
             "key2".to_string(),
             Object::new(Value::String("".to_string()), Some(SystemTime::now())),
@@ -488,9 +541,10 @@ mod tests {
     #[test]
     fn execute_del_one() {
         let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock()
-            .unwrap()
-            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new(Value::String("value".to_string()), None),
+        );
         let cmd = Request::Del(vec!["key".to_string()]);
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("1".to_string()));
@@ -499,9 +553,10 @@ mod tests {
     #[test]
     fn execute_del_one_multiple_times() {
         let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock()
-            .unwrap()
-            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new(Value::String("value".to_string()), None),
+        );
         let cmd = Request::Del(vec!["key".to_string(), "key".to_string()]);
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("1".to_string()));
@@ -510,9 +565,10 @@ mod tests {
     #[test]
     fn execute_del_multiple() {
         let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock()
-            .unwrap()
-            .insert("key".to_string(), Object::new(Value::String("value".to_string()), None));
+        db.lock().unwrap().insert(
+            "key".to_string(),
+            Object::new(Value::String("value".to_string()), None),
+        );
         db.lock().unwrap().insert(
             "key2".to_string(),
             Object::new(Value::String("".to_string()), Some(SystemTime::now())),

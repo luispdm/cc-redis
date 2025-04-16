@@ -106,3 +106,9 @@ Expiration logic moved to `Db`. Change `Object` value to `enum`.
 
 First version of `Incr` implemented and expiration status moved to the object itself.
 </details>
+
+## 2024-04-16
+<details>
+
+`Incr` tests. `Decr` implemented.
+</details>

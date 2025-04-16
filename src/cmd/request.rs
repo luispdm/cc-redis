@@ -3,7 +3,7 @@ use crate::{
         error::ClientError,
         parser::set::Set,
         response::Response,
-        types::{DEL, ECHO, EXISTS, GET, INCR, PING, SET},
+        types::{DECR, DEL, ECHO, EXISTS, GET, INCR, PING, SET},
     },
     db::{Db, Object, Value},
 };
@@ -17,6 +17,7 @@ pub enum Request {
     Exists(Vec<String>),
     Del(Vec<String>),
     Incr(String),
+    Decr(String),
 }
 
 impl Request {
@@ -112,6 +113,41 @@ impl Request {
                     },
                 }
             }
+
+            Self::Decr(key) => {
+                let mut map = db.lock().unwrap();
+                let minus_one = -1i64;
+
+                match map.get(&key) {
+                    None => {
+                        map.insert(key, Object::new(Value::Integer(minus_one), None));
+                        Response::Integer(minus_one.to_string())
+                    }
+
+                    Some(obj) if obj.is_expired() => {
+                        map.swap_remove(&key);
+                        map.insert(key, Object::new(Value::Integer(minus_one), None));
+
+                        Response::Integer(minus_one.to_string())
+                    }
+
+                    Some(obj) => match obj.value {
+                        Value::Integer(i) => {
+                            // value moved to avoid borrowing issues
+                            let exp = obj.expiration;
+
+                            i.checked_sub(1).map_or(
+                                Response::SimpleError(ClientError::OverflowError.to_string()),
+                                |v| {
+                                    map.insert(key, Object::new(Value::Integer(v), exp));
+                                    Response::Integer(v.to_string())
+                                },
+                            )
+                        }
+                        _ => Response::SimpleError(ClientError::IntegerError.to_string()),
+                    },
+                }
+            }
         }
     }
 }
@@ -180,6 +216,15 @@ impl TryFrom<Vec<String>> for Request {
                     Ok(Request::Incr(params[1].to_owned()))
                 }
             }
+
+            DECR => {
+                if params.len() != 2 {
+                    Err(ClientError::WrongNumberOfArguments(DECR.to_string()))
+                } else {
+                    Ok(Request::Decr(params[1].to_owned()))
+                }
+            }
+
             c => Err(ClientError::UnknownCommand(c.to_string())),
         }
     }
@@ -197,6 +242,33 @@ mod tests {
     use crate::db::Value;
 
     use super::*;
+
+    #[test]
+    fn decr_one_arg() {
+        let params = vec![DECR.to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments(DECR.to_string())
+        );
+    }
+
+    #[test]
+    fn decr_multiple_args() {
+        let params = vec![DECR.to_string(), "key".to_string(), "key2".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments(DECR.to_string())
+        );
+    }
+
+    #[test]
+    fn decr_ok() {
+        let params = vec![DECR.to_string(), "key".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(cmd.unwrap(), Request::Decr("key".to_string()));
+    }
 
     #[test]
     fn incr_one_arg() {
@@ -624,7 +696,7 @@ mod tests {
             "counter".to_string(),
             Object::new(
                 Value::Integer(5),
-                Some(SystemTime::now() - Duration::from_secs(10))
+                Some(SystemTime::now() - Duration::from_secs(10)),
             ),
         );
         let cmd = Request::Incr("counter".to_string());
@@ -635,10 +707,9 @@ mod tests {
     #[test]
     fn execute_incr_valid_integer() {
         let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock().unwrap().insert(
-            "counter".to_string(),
-            Object::new(Value::Integer(5), None),
-        );
+        db.lock()
+            .unwrap()
+            .insert("counter".to_string(), Object::new(Value::Integer(5), None));
         let cmd = Request::Incr("counter".to_string());
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("6".to_string()));
@@ -678,12 +749,89 @@ mod tests {
     fn execute_incr_multiple_times() {
         let db = Db::new(Mutex::new(IndexMap::new()));
         let cmd = Request::Incr("counter".to_string());
-        
+
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("1".to_string()));
-        
+
         let cmd = Request::Incr("counter".to_string());
         let reply = cmd.execute(&db);
         assert_eq!(reply, Response::Integer("2".to_string()));
+    }
+
+    #[test]
+    fn execute_decr_new_key() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        let cmd = Request::Decr("counter".to_string());
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("-1".to_string()));
+    }
+
+    #[test]
+    fn execute_decr_expired_key() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".to_string(),
+            Object::new(
+                Value::Integer(5),
+                Some(SystemTime::now() - Duration::from_secs(10)),
+            ),
+        );
+        let cmd = Request::Decr("counter".to_string());
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("-1".to_string()));
+    }
+
+    #[test]
+    fn execute_decr_valid_integer() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock()
+            .unwrap()
+            .insert("counter".to_string(), Object::new(Value::Integer(5), None));
+        let cmd = Request::Decr("counter".to_string());
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("4".to_string()));
+    }
+
+    #[test]
+    fn execute_decr_underflow() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".to_string(),
+            Object::new(Value::Integer(i64::MIN), None),
+        );
+        let cmd = Request::Decr("counter".to_string());
+        let reply = cmd.execute(&db);
+        assert_eq!(
+            reply,
+            Response::SimpleError(ClientError::OverflowError.to_string())
+        );
+    }
+
+    #[test]
+    fn execute_decr_non_integer_value() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".to_string(),
+            Object::new(Value::String("foo".to_string()), None),
+        );
+        let cmd = Request::Decr("counter".to_string());
+        let reply = cmd.execute(&db);
+        assert_eq!(
+            reply,
+            Response::SimpleError(ClientError::IntegerError.to_string())
+        );
+    }
+
+    #[test]
+    fn execute_decr_multiple_times() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        let cmd = Request::Decr("counter".to_string());
+
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("-1".to_string()));
+
+        let cmd = Request::Decr("counter".to_string());
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("-2".to_string()));
     }
 }

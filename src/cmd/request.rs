@@ -133,6 +133,7 @@ impl TryFrom<Vec<String>> for Request {
                     Ok(Request::Ping(params.get(1).cloned()))
                 }
             }
+
             ECHO => {
                 if params.len() != 2 {
                     Err(ClientError::WrongNumberOfArguments(ECHO.to_string()))
@@ -140,6 +141,7 @@ impl TryFrom<Vec<String>> for Request {
                     Ok(Request::Echo(params[1].to_owned()))
                 }
             }
+
             SET => {
                 if params.len() == 1 {
                     Err(ClientError::WrongNumberOfArguments(SET.to_string()))
@@ -147,6 +149,7 @@ impl TryFrom<Vec<String>> for Request {
                     Ok(Set::parse(params[1..].to_vec()).map(Request::Set))?
                 }
             }
+
             GET => {
                 if params.len() != 2 {
                     Err(ClientError::WrongNumberOfArguments(GET.to_string()))
@@ -154,6 +157,7 @@ impl TryFrom<Vec<String>> for Request {
                     Ok(Request::Get(params[1].to_owned()))
                 }
             }
+
             EXISTS => {
                 if params.len() < 2 {
                     Err(ClientError::WrongNumberOfArguments(EXISTS.to_string()))
@@ -161,6 +165,7 @@ impl TryFrom<Vec<String>> for Request {
                     Ok(Request::Exists(params[1..].to_vec()))
                 }
             }
+
             DEL => {
                 if params.len() < 2 {
                     Err(ClientError::WrongNumberOfArguments(DEL.to_string()))
@@ -168,10 +173,10 @@ impl TryFrom<Vec<String>> for Request {
                     Ok(Request::Del(params[1..].to_vec()))
                 }
             }
-            // TODO test me
+
             INCR => {
                 if params.len() != 2 {
-                    Err(ClientError::WrongNumberOfArguments(DEL.to_string()))
+                    Err(ClientError::WrongNumberOfArguments(INCR.to_string()))
                 } else {
                     Ok(Request::Incr(params[1].to_owned()))
                 }
@@ -193,6 +198,33 @@ mod tests {
     use crate::db::Value;
 
     use super::*;
+
+    #[test]
+    fn incr_one_arg() {
+        let params = vec![INCR.to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments(INCR.to_string())
+        );
+    }
+
+    #[test]
+    fn incr_multiple_args() {
+        let params = vec![INCR.to_string(), "key".to_string(), "key2".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments(INCR.to_string())
+        );
+    }
+
+    #[test]
+    fn incr_ok() {
+        let params = vec![INCR.to_string(), "key".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(cmd.unwrap(), Request::Incr("key".to_string()));
+    }
 
     #[test]
     fn del_one_arg() {

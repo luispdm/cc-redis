@@ -110,5 +110,7 @@ First version of `Incr` implemented and expiration status moved to the object it
 ## 2024-04-16
 <details>
 
-`Incr` tests. `Decr` implemented.
+`Incr` tests. `Decr` implemented. Arithmetic logic unified and moved to new execution module. Code prepared to handle possible implementations of `INCRBY` and `DECRBY`.
+
+Had to use the `Box` smart pointer to return two different closures from the `operation` method.
 </details>

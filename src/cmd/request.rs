@@ -1,11 +1,12 @@
 use crate::{
     cmd::{
         error::ClientError,
+        execution::arithmetic::Integer,
         parser::set::Set,
         response::Response,
         types::{DECR, DEL, ECHO, EXISTS, GET, INCR, PING, SET},
     },
-    db::{Db, Object, Value},
+    db::{Db, Object},
 };
 
 #[derive(Debug, PartialEq)]
@@ -80,73 +81,21 @@ impl Request {
             }
 
             Self::Incr(key) => {
-                let mut map = db.lock().unwrap();
-                let one = 1i64;
-
-                match map.get(&key) {
-                    None => {
-                        map.insert(key, Object::new(Value::Integer(one), None));
-                        Response::Integer(one.to_string())
-                    }
-
-                    Some(obj) if obj.is_expired() => {
-                        map.swap_remove(&key);
-                        map.insert(key, Object::new(Value::Integer(one), None));
-
-                        Response::Integer(one.to_string())
-                    }
-
-                    Some(obj) => match obj.value {
-                        Value::Integer(i) => {
-                            // value moved to avoid borrowing issues
-                            let exp = obj.expiration;
-
-                            i.checked_add(1).map_or(
-                                Response::SimpleError(ClientError::OverflowError.to_string()),
-                                |v| {
-                                    map.insert(key, Object::new(Value::Integer(v), exp));
-                                    Response::Integer(v.to_string())
-                                },
-                            )
-                        }
-                        _ => Response::SimpleError(ClientError::IntegerError.to_string()),
-                    },
-                }
-            }
+                Integer::Incr
+                    .execute(db, key)
+                    .map_or_else(
+                        |e| Response::SimpleError(e.to_string()),
+                        |v| Response::Integer(v.to_string())
+                    )
+            },
 
             Self::Decr(key) => {
-                let mut map = db.lock().unwrap();
-                let minus_one = -1i64;
-
-                match map.get(&key) {
-                    None => {
-                        map.insert(key, Object::new(Value::Integer(minus_one), None));
-                        Response::Integer(minus_one.to_string())
-                    }
-
-                    Some(obj) if obj.is_expired() => {
-                        map.swap_remove(&key);
-                        map.insert(key, Object::new(Value::Integer(minus_one), None));
-
-                        Response::Integer(minus_one.to_string())
-                    }
-
-                    Some(obj) => match obj.value {
-                        Value::Integer(i) => {
-                            // value moved to avoid borrowing issues
-                            let exp = obj.expiration;
-
-                            i.checked_sub(1).map_or(
-                                Response::SimpleError(ClientError::OverflowError.to_string()),
-                                |v| {
-                                    map.insert(key, Object::new(Value::Integer(v), exp));
-                                    Response::Integer(v.to_string())
-                                },
-                            )
-                        }
-                        _ => Response::SimpleError(ClientError::IntegerError.to_string()),
-                    },
-                }
+                Integer::Decr
+                    .execute(db, key)
+                    .map_or_else(
+                        |e| Response::SimpleError(e.to_string()),
+                        |v| Response::Integer(v.to_string())
+                    )
             }
         }
     }

@@ -631,7 +631,7 @@ mod tests {
     }
 
     #[test]
-    fn execute_incr_new_key() {
+    fn execute_incr_ok() {
         let db = Db::new(Mutex::new(IndexMap::new()));
         let cmd = Request::Incr("counter".to_string());
         let reply = cmd.execute(&db);
@@ -639,48 +639,7 @@ mod tests {
     }
 
     #[test]
-    fn execute_incr_expired_key() {
-        let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock().unwrap().insert(
-            "counter".to_string(),
-            Object::new(
-                Value::Integer(5),
-                Some(SystemTime::now() - Duration::from_secs(10)),
-            ),
-        );
-        let cmd = Request::Incr("counter".to_string());
-        let reply = cmd.execute(&db);
-        assert_eq!(reply, Response::Integer("1".to_string()));
-    }
-
-    #[test]
-    fn execute_incr_valid_integer() {
-        let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock()
-            .unwrap()
-            .insert("counter".to_string(), Object::new(Value::Integer(5), None));
-        let cmd = Request::Incr("counter".to_string());
-        let reply = cmd.execute(&db);
-        assert_eq!(reply, Response::Integer("6".to_string()));
-    }
-
-    #[test]
-    fn execute_incr_overflow() {
-        let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock().unwrap().insert(
-            "counter".to_string(),
-            Object::new(Value::Integer(i64::MAX), None),
-        );
-        let cmd = Request::Incr("counter".to_string());
-        let reply = cmd.execute(&db);
-        assert_eq!(
-            reply,
-            Response::SimpleError(ClientError::OverflowError.to_string())
-        );
-    }
-
-    #[test]
-    fn execute_incr_non_integer_value() {
+    fn execute_incr_err() {
         let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock().unwrap().insert(
             "counter".to_string(),
@@ -688,27 +647,11 @@ mod tests {
         );
         let cmd = Request::Incr("counter".to_string());
         let reply = cmd.execute(&db);
-        assert_eq!(
-            reply,
-            Response::SimpleError(ClientError::IntegerError.to_string())
-        );
+        assert!(matches!(reply, Response::SimpleError(_)));
     }
 
     #[test]
-    fn execute_incr_multiple_times() {
-        let db = Db::new(Mutex::new(IndexMap::new()));
-        let cmd = Request::Incr("counter".to_string());
-
-        let reply = cmd.execute(&db);
-        assert_eq!(reply, Response::Integer("1".to_string()));
-
-        let cmd = Request::Incr("counter".to_string());
-        let reply = cmd.execute(&db);
-        assert_eq!(reply, Response::Integer("2".to_string()));
-    }
-
-    #[test]
-    fn execute_decr_new_key() {
+    fn execute_decr_ok() {
         let db = Db::new(Mutex::new(IndexMap::new()));
         let cmd = Request::Decr("counter".to_string());
         let reply = cmd.execute(&db);
@@ -716,48 +659,7 @@ mod tests {
     }
 
     #[test]
-    fn execute_decr_expired_key() {
-        let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock().unwrap().insert(
-            "counter".to_string(),
-            Object::new(
-                Value::Integer(5),
-                Some(SystemTime::now() - Duration::from_secs(10)),
-            ),
-        );
-        let cmd = Request::Decr("counter".to_string());
-        let reply = cmd.execute(&db);
-        assert_eq!(reply, Response::Integer("-1".to_string()));
-    }
-
-    #[test]
-    fn execute_decr_valid_integer() {
-        let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock()
-            .unwrap()
-            .insert("counter".to_string(), Object::new(Value::Integer(5), None));
-        let cmd = Request::Decr("counter".to_string());
-        let reply = cmd.execute(&db);
-        assert_eq!(reply, Response::Integer("4".to_string()));
-    }
-
-    #[test]
-    fn execute_decr_underflow() {
-        let db = Db::new(Mutex::new(IndexMap::new()));
-        db.lock().unwrap().insert(
-            "counter".to_string(),
-            Object::new(Value::Integer(i64::MIN), None),
-        );
-        let cmd = Request::Decr("counter".to_string());
-        let reply = cmd.execute(&db);
-        assert_eq!(
-            reply,
-            Response::SimpleError(ClientError::OverflowError.to_string())
-        );
-    }
-
-    #[test]
-    fn execute_decr_non_integer_value() {
+    fn execute_decr_err() {
         let db = Db::new(Mutex::new(IndexMap::new()));
         db.lock().unwrap().insert(
             "counter".to_string(),
@@ -765,22 +667,6 @@ mod tests {
         );
         let cmd = Request::Decr("counter".to_string());
         let reply = cmd.execute(&db);
-        assert_eq!(
-            reply,
-            Response::SimpleError(ClientError::IntegerError.to_string())
-        );
-    }
-
-    #[test]
-    fn execute_decr_multiple_times() {
-        let db = Db::new(Mutex::new(IndexMap::new()));
-        let cmd = Request::Decr("counter".to_string());
-
-        let reply = cmd.execute(&db);
-        assert_eq!(reply, Response::Integer("-1".to_string()));
-
-        let cmd = Request::Decr("counter".to_string());
-        let reply = cmd.execute(&db);
-        assert_eq!(reply, Response::Integer("-2".to_string()));
+        assert!(matches!(reply, Response::SimpleError(_)));
     }
 }

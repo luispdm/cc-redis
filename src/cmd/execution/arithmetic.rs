@@ -52,4 +52,135 @@ impl Integer {
     }
 }
 
-// TODO move here Incr and Decr tests from requests
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        sync::Mutex,
+        time::{Duration, SystemTime},
+    };
+    use indexmap::IndexMap;
+    use crate::db::{Value, Object};
+
+    #[test]
+    fn incr_new_key() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        let result = Integer::Incr.execute(&db, "counter".into());
+        assert_eq!(result, Ok(1));
+    }
+
+    #[test]
+    fn incr_expired_key() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".into(),
+            Object::new(
+                Value::Integer(5),
+                Some(SystemTime::now() - Duration::from_secs(10))
+            ),
+        );
+        let result = Integer::Incr.execute(&db, "counter".into());
+        assert_eq!(result, Ok(1));
+    }
+
+    #[test]
+    fn incr_valid_integer() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".into(),
+            Object::new(Value::Integer(5), None)
+        );
+        let result = Integer::Incr.execute(&db, "counter".into());
+        assert_eq!(result, Ok(6));
+    }
+
+    #[test]
+    fn incr_overflow() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".into(),
+            Object::new(Value::Integer(i64::MAX), None)
+        );
+        let result = Integer::Incr.execute(&db, "counter".into());
+        assert_eq!(result, Err(ClientError::OverflowError));
+    }
+
+    #[test]
+    fn incr_non_integer_value() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".into(),
+            Object::new(Value::String("foo".into()), None)
+        );
+        let result = Integer::Incr.execute(&db, "counter".into());
+        assert_eq!(result, Err(ClientError::IntegerError));
+    }
+
+    #[test]
+    fn incr_multiple_times() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        assert_eq!(Integer::Incr.execute(&db, "counter".into()), Ok(1));
+        assert_eq!(Integer::Incr.execute(&db, "counter".into()), Ok(2));
+    }
+
+    #[test]
+    fn decr_new_key() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        let result = Integer::Decr.execute(&db, "counter".into());
+        assert_eq!(result, Ok(-1));
+    }
+
+    #[test]
+    fn decr_expired_key() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".into(),
+            Object::new(
+                Value::Integer(5),
+                Some(SystemTime::now() - Duration::from_secs(10))
+            ),
+        );
+        let result = Integer::Decr.execute(&db, "counter".into());
+        assert_eq!(result, Ok(-1));
+    }
+
+    #[test]
+    fn decr_valid_integer() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".into(),
+            Object::new(Value::Integer(5), None)
+        );
+        let result = Integer::Decr.execute(&db, "counter".into());
+        assert_eq!(result, Ok(4));
+    }
+
+    #[test]
+    fn decr_underflow() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".into(),
+            Object::new(Value::Integer(i64::MIN), None)
+        );
+        let result = Integer::Decr.execute(&db, "counter".into());
+        assert_eq!(result, Err(ClientError::OverflowError));
+    }
+
+    #[test]
+    fn decr_non_integer_value() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".into(),
+            Object::new(Value::String("foo".into()), None)
+        );
+        let result = Integer::Decr.execute(&db, "counter".into());
+        assert_eq!(result, Err(ClientError::IntegerError));
+    }
+
+    #[test]
+    fn decr_multiple_times() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        assert_eq!(Integer::Decr.execute(&db, "counter".into()), Ok(-1));
+        assert_eq!(Integer::Decr.execute(&db, "counter".into()), Ok(-2));
+    }
+}

@@ -211,6 +211,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn incrby_one_arg() {
+        let params = vec![INCRBY.to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments(INCRBY.to_string())
+        );
+    }
+
+    #[test]
+    fn incrby_ok() {
+        let params = vec![INCRBY.to_string(), "key".to_string(), 100.to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap(),
+            Request::IncrBy(IntegerParser {
+                key: "key".to_string(),
+                value: 100,
+            })
+        );
+    }
+
+    #[test]
     fn decr_one_arg() {
         let params = vec![DECR.to_string()];
         let cmd = Request::try_from(params);
@@ -684,6 +707,26 @@ mod tests {
             Object::new(Value::String("foo".to_string()), None),
         );
         let cmd = Request::Decr("counter".to_string());
+        let reply = cmd.execute(&db);
+        assert!(matches!(reply, Response::SimpleError(_)));
+    }
+
+    #[test]
+    fn execute_incrby_ok() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        let cmd = Request::IncrBy(IntegerParser { key: "counter".to_string(), value: 100 });
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("100".to_string()));
+    }
+
+    #[test]
+    fn execute_incrby_err() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".to_string(),
+            Object::new(Value::String("foo".to_string()), None),
+        );
+        let cmd = Request::IncrBy(IntegerParser { key: "counter".to_string(), value: 100 });
         let reply = cmd.execute(&db);
         assert!(matches!(reply, Response::SimpleError(_)));
     }

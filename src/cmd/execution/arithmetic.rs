@@ -185,4 +185,65 @@ mod tests {
         assert_eq!(Integer::Decr.execute(&db, "counter".into()), Ok(-1));
         assert_eq!(Integer::Decr.execute(&db, "counter".into()), Ok(-2));
     }
+
+    #[test]
+    fn incrby_ok() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        let result = Integer::IncrBy(100).execute(&db, "counter".into());
+        assert_eq!(result, Ok(100));
+    }
+
+    #[test]
+    fn incrby_expired_key() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".into(),
+            Object::new(
+                Value::Integer(5),
+                Some(SystemTime::now() - Duration::from_secs(10))
+            ),
+        );
+        let result = Integer::IncrBy(10).execute(&db, "counter".into());
+        assert_eq!(result, Ok(10));
+    }
+
+    #[test]
+    fn incrby_existing_integer() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".into(),
+            Object::new(Value::Integer(5), None)
+        );
+        let result = Integer::IncrBy(10).execute(&db, "counter".into());
+        assert_eq!(result, Ok(15));
+    }
+
+    #[test]
+    fn incrby_overflow() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".into(),
+            Object::new(Value::Integer(i64::MAX), None)
+        );
+        let result = Integer::IncrBy(100).execute(&db, "counter".into());
+        assert_eq!(result, Err(ClientError::OverflowError));
+    }
+
+    #[test]
+    fn incrby_non_integer_value() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".into(),
+            Object::new(Value::String("foo".into()), None)
+        );
+        let result = Integer::IncrBy(10).execute(&db, "counter".into());
+        assert_eq!(result, Err(ClientError::IntegerError));
+    }
+
+    #[test]
+    fn incrby_multiple_times() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        assert_eq!(Integer::IncrBy(10).execute(&db, "counter".into()), Ok(10));
+        assert_eq!(Integer::IncrBy(10).execute(&db, "counter".into()), Ok(20));
+    }
 }

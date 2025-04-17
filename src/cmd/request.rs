@@ -2,9 +2,9 @@ use crate::{
     cmd::{
         error::ClientError,
         execution::arithmetic::Integer,
-        parser::set::Set,
+        parser::{arithmetic::Integer as IntegerParser, set::Set as SetParser},
         response::Response,
-        types::{DECR, DEL, ECHO, EXISTS, GET, INCR, PING, SET},
+        types::{DECR, DEL, ECHO, EXISTS, GET, INCR, INCRBY, PING, SET},
     },
     db::{Db, Object},
 };
@@ -14,11 +14,12 @@ pub enum Request {
     Ping(Option<String>),
     Echo(String),
     Get(String),
-    Set(Set),
+    Set(SetParser),
     Exists(Vec<String>),
     Del(Vec<String>),
     Incr(String),
     Decr(String),
+    IncrBy(IntegerParser),
 }
 
 impl Request {
@@ -31,9 +32,9 @@ impl Request {
 
             Self::Echo(val) => Response::BulkString(val),
 
-            Self::Set(set) => {
+            Self::Set(parser) => {
                 let mut map = db.lock().unwrap();
-                map.insert(set.key, Object::new(set.value, set.expiration));
+                map.insert(parser.key, Object::new(parser.value, parser.expiration));
                 Response::SimpleString("OK".to_string())
             }
 
@@ -97,6 +98,15 @@ impl Request {
                         |v| Response::Integer(v.to_string())
                     )
             }
+
+            Self::IncrBy(parser) => {
+                Integer::IncrBy(parser.value)
+                    .execute(db, parser.key)
+                    .map_or_else(
+                        |e| Response::SimpleError(e.to_string()),
+                        |v| Response::Integer(v.to_string())
+                    )
+            }
         }
     }
 }
@@ -130,7 +140,7 @@ impl TryFrom<Vec<String>> for Request {
                 if params.len() == 1 {
                     Err(ClientError::WrongNumberOfArguments(SET.to_string()))
                 } else {
-                    Ok(Set::parse(params[1..].to_vec()).map(Request::Set))?
+                    Ok(SetParser::parse(&params[1..]).map(Request::Set))?
                 }
             }
 
@@ -171,6 +181,14 @@ impl TryFrom<Vec<String>> for Request {
                     Err(ClientError::WrongNumberOfArguments(DECR.to_string()))
                 } else {
                     Ok(Request::Decr(params[1].to_owned()))
+                }
+            }
+
+            INCRBY => {
+                if params.len() == 1 {
+                    Err(ClientError::WrongNumberOfArguments(INCRBY.to_string()))
+                } else {
+                    Ok(IntegerParser::parse(&params[1..]).map(Request::IncrBy))?
                 }
             }
 
@@ -302,7 +320,7 @@ mod tests {
         let cmd = Request::try_from(params);
         assert_eq!(
             cmd.unwrap(),
-            Request::Set(Set {
+            Request::Set(SetParser {
                 key: "key".to_string(),
                 value: Value::String("".to_string()),
                 expiration: None
@@ -429,7 +447,7 @@ mod tests {
 
     #[test]
     fn execute_set_ok() {
-        let set = Set {
+        let set = SetParser {
             key: "key".to_string(),
             value: Value::String("".to_string()),
             expiration: None,

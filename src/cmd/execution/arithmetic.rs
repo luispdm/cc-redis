@@ -6,6 +6,7 @@ use crate::{
 pub enum Integer {
     Incr,
     Decr,
+    IncrBy(i64),
 }
 
 impl Integer {
@@ -44,10 +45,11 @@ impl Integer {
         }
     }
 
-    fn operation(&self) -> (i64, Box<dyn Fn(i64) -> Option<i64>>) {
+    fn operation<'a>(&'a self) -> (i64, Box<dyn Fn(i64) -> Option<i64> + 'a>) {
         match self {
             Integer::Incr => (1, Box::new(|i: i64| i.checked_add(1))),
             Integer::Decr => (-1, Box::new(|i: i64| i.checked_sub(1))),
+            Integer::IncrBy(v) => (*v, Box::new(|i: i64| i.checked_add(*v))),
         }
     }
 }

@@ -13,7 +13,7 @@ pub struct Set {
 }
 
 impl Set {
-    pub fn parse(params: Vec<String>) -> Result<Self, ClientError> {
+    pub fn parse(params: &[String]) -> Result<Self, ClientError> {
         if params.len() < 2 {
             return Err(ClientError::WrongNumberOfArguments(SET.to_string()));
         }
@@ -91,19 +91,19 @@ mod tests {
     fn parse_one_arg() {
         assert_eq!(
             ClientError::WrongNumberOfArguments(SET.to_string()),
-            Set::parse(vec!["".to_string()]).unwrap_err()
+            Set::parse(&["".to_string()]).unwrap_err()
         );
     }
 
     #[test]
     fn parse_three_args() {
-        let params = vec!["".to_string(), "".to_string(), "".to_string()];
+        let params = &["".to_string(), "".to_string(), "".to_string()];
         assert_eq!(ClientError::SyntaxError, Set::parse(params).unwrap_err());
     }
 
     #[test]
     fn parse_five_args() {
-        let params = vec![
+        let params = &[
             "".to_string(),
             "".to_string(),
             "".to_string(),
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn parse_two_args() {
-        let params = vec!["key".to_string(), "value".to_string()];
+        let params = &["key".to_string(), "value".to_string()];
         assert_eq!(
             Set {
                 key: "key".to_string(),
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn parse_two_args_num() {
-        let params = vec!["key".to_string(), "1".to_string()];
+        let params = &["key".to_string(), "1".to_string()];
         assert_eq!(
             Set {
                 key: "key".to_string(),
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn parse_four_args() {
-        let params = vec![
+        let params = &[
             "key".to_string(),
             "value".to_string(),
             "exat".to_string(),
@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn parse_four_args_num() {
-        let params = vec![
+        let params = &[
             "key".to_string(),
             "-1".to_string(),
             "exat".to_string(),
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn parse_four_args_err() {
-        let params = vec![
+        let params = &[
             "key".to_string(),
             "value".to_string(),
             "NOTVALID".to_string(),

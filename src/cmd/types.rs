@@ -6,3 +6,4 @@ pub const DEL: &str = "del";
 pub const EXISTS: &str = "exists";
 pub const INCR: &str = "incr";
 pub const DECR: &str = "decr";
+pub const INCRBY: &str = "incrby";

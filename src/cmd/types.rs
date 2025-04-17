@@ -7,3 +7,4 @@ pub const EXISTS: &str = "exists";
 pub const INCR: &str = "incr";
 pub const DECR: &str = "decr";
 pub const INCRBY: &str = "incrby";
+pub const DECRBY: &str = "decrby";

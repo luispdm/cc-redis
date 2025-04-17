@@ -4,7 +4,7 @@ use crate::{
         execution::arithmetic::Integer,
         parser::{arithmetic::Integer as IntegerParser, set::Set as SetParser},
         response::Response,
-        types::{DECR, DEL, ECHO, EXISTS, GET, INCR, INCRBY, PING, SET},
+        types::{DECR, DECRBY, DEL, ECHO, EXISTS, GET, INCR, INCRBY, PING, SET},
     },
     db::{Db, Object},
 };
@@ -20,6 +20,7 @@ pub enum Request {
     Incr(String),
     Decr(String),
     IncrBy(IntegerParser),
+    DecrBy(IntegerParser),
 }
 
 impl Request {
@@ -101,6 +102,15 @@ impl Request {
 
             Self::IncrBy(parser) => {
                 Integer::IncrBy(parser.value)
+                    .execute(db, parser.key)
+                    .map_or_else(
+                        |e| Response::SimpleError(e.to_string()),
+                        |v| Response::Integer(v.to_string())
+                    )
+            }
+
+            Self::DecrBy(parser) => {
+                Integer::DecrBy(parser.value)
                     .execute(db, parser.key)
                     .map_or_else(
                         |e| Response::SimpleError(e.to_string()),
@@ -192,6 +202,14 @@ impl TryFrom<Vec<String>> for Request {
                 }
             }
 
+            DECRBY => {
+                if params.len() == 1 {
+                    Err(ClientError::WrongNumberOfArguments(DECRBY.to_string()))
+                } else {
+                    Ok(IntegerParser::parse(&params[1..]).map(Request::DecrBy))?
+                }
+            }
+
             c => Err(ClientError::UnknownCommand(c.to_string())),
         }
     }
@@ -209,6 +227,29 @@ mod tests {
     use crate::db::Value;
 
     use super::*;
+
+    #[test]
+    fn decrby_one_arg() {
+        let params = vec![DECRBY.to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments(DECRBY.to_string())
+        );
+    }
+
+    #[test]
+    fn decrby_ok() {
+        let params = vec![DECRBY.to_string(), "key".to_string(), 100.to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap(),
+            Request::DecrBy(IntegerParser {
+                key: "key".to_string(),
+                value: 100,
+            })
+        );
+    }
 
     #[test]
     fn incrby_one_arg() {
@@ -727,6 +768,26 @@ mod tests {
             Object::new(Value::String("foo".to_string()), None),
         );
         let cmd = Request::IncrBy(IntegerParser { key: "counter".to_string(), value: 100 });
+        let reply = cmd.execute(&db);
+        assert!(matches!(reply, Response::SimpleError(_)));
+    }
+
+    #[test]
+    fn execute_decrby_ok() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        let cmd = Request::DecrBy(IntegerParser { key: "counter".to_string(), value: 100 });
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("-100".to_string()));
+    }
+
+    #[test]
+    fn execute_decrby_err() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "counter".to_string(),
+            Object::new(Value::String("foo".to_string()), None),
+        );
+        let cmd = Request::DecrBy(IntegerParser { key: "counter".to_string(), value: 100 });
         let reply = cmd.execute(&db);
         assert!(matches!(reply, Response::SimpleError(_)));
     }

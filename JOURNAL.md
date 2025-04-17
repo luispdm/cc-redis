@@ -114,3 +114,9 @@ First version of `Incr` implemented and expiration status moved to the object it
 
 Had to use the `Box` smart pointer to return two different closures from the `operation` method.
 </details>
+
+## 2024-04-17
+<details>
+
+`INCR` and `DECR` tests moved. `INCRBY` and `DECRBY` implemented. Had to implement the parser for incrby and decrby to convert String to i64. Realized that the set parser takes a `Vec<String>` during the process; as the copy is not necessary, it has been changed to a `&[String]`.
+</details>

@@ -48,7 +48,7 @@ impl Integer {
         }
     }
 
-    fn operation(&self) -> (i64, Box<dyn Fn(i64) -> Option<i64> + '_>) {
+    pub fn operation(&self) -> (i64, Box<dyn Fn(i64) -> Option<i64> + '_>) {
         match self {
             Integer::Incr => (1, Box::new(|i: i64| i.checked_add(1))),
             Integer::Decr => (-1, Box::new(|i: i64| i.checked_sub(1))),

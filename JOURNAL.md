@@ -1,9 +1,9 @@
-## 2024-03-28
+## 2025-03-28
 <details>
 Redis is not able to handle a benchmark with 50 clients and 10k requests. Many threads return: `failed to read from socket: Connection reset by peer`. Trying to use `RwLock` instead of `Mutex`: read performance increases (with less than 10k requests) but the issue persists. Realized that `tokio::sync::Mutex` or `tokio::sync::RwLock` are not required as the struct is not held over an `await` point. Using `std::sync::Mutex` doesn't solve the issue.
 </details>
 
-## 2024-03-29
+## 2025-03-29
 <details>
 Ok, debug time. Just return a simple string instead of deserializing and processing the message. Surprise surprise, the benchmark holds.
 Now only deserialize... BAM! Benchmark can't complete.
@@ -17,7 +17,7 @@ TODO:
 - investigate how to reduce the CPU usage
 </details>
 
-## 2024-04-01
+## 2025-04-01
 <details>
 Added the missing tests for the `GET` command. Fixed the `PING` and `ECHO` tests.
 
@@ -53,12 +53,12 @@ Each `String` takes: 60 bytes + 24 bytes for pointer, length and capacity. Total
 10M keys * 100 bytes = 1GB of memory/storage used. This might be acceptable in certain scenarios.
 </details>
 
-## 2024-04-02
+## 2025-04-02
 <details>
 For now I decided to go with #1: store expiration as part of the value. Passive expiration implemented. Some bugs fixed and tests added
 </details>
 
-## 2024-04-03
+## 2025-04-03
 <details>
 
 Realized that iteration over HashMap is not random on the same program execution by just using `.iter().take(n)`. Either use a separate data structure or change strategy.
@@ -70,7 +70,7 @@ Found that the crates `indexmap` and `rand` might give me what I need. Algorithm
 Problem: the same key is retrieved multiple times. Look into `choose_multiple` and `sample` of `rand`
 </details>
 
-## 2024-04-08
+## 2025-04-08
 <details>
 
 After reading the documentation of `choose_multiple` and `rand`, I decided to stick with `sample` for now, as the sample size is small.
@@ -83,31 +83,31 @@ TODO:
 - think about how to organize parser and cmd
 </details>
 
-## 2024-04-09
+## 2025-04-09
 <details>
 
 `SET` tests, `EXISTS` tests and `DEL` command. Some refactoring: command constant types, client error moved to error file.
 </details>
 
-## 2024-04-10
+## 2025-04-10
 <details>
 
 Made types mod private. Digged a bit into the other commands to understand how to properly store integers and lists. Most likely the value will be changed from `String` to `enum`, with variants being: `String`, `i64` and (probably) `VecDeque`.
 </details>
 
-## 2024-04-14
+## 2025-04-14
 <details>
 
 Expiration logic moved to `Db`. Change `Object` value to `enum`.
 </details>
 
-## 2024-04-15
+## 2025-04-15
 <details>
 
 First version of `Incr` implemented and expiration status moved to the object itself.
 </details>
 
-## 2024-04-16
+## 2025-04-16
 <details>
 
 `Incr` tests. `Decr` implemented. Arithmetic logic unified and moved to new execution module. Code prepared to handle possible implementations of `INCRBY` and `DECRBY`.
@@ -115,8 +115,42 @@ First version of `Incr` implemented and expiration status moved to the object it
 Had to use the `Box` smart pointer to return two different closures from the `operation` method.
 </details>
 
-## 2024-04-17
+## 2025-04-17
 <details>
 
 `INCR` and `DECR` tests moved. `INCRBY` and `DECRBY` implemented. Had to implement the parser for incrby and decrby to convert String to i64. Realized that the set parser takes a `Vec<String>` during the process; as the copy is not necessary, it has been changed to a `&[String]`.
+</details>
+
+## 2025-04-22
+<details>
+
+I watched [this video](https://youtu.be/Sv6Bswfjnzo?feature=shared&t=157) to refresh my knowledge around static and dynamic dispatch. Generics instead of trait objects can't be used in the `operation` function to achieve static dispatch, as no two closures, even if identical, are of the same type. Enums could provide a faster execution with the following code:
+```rust
+enum IntegerOperation {
+    Add(i64),
+    Subtract(i64),
+}
+
+impl IntegerOperation {
+    fn apply(&self, value: i64) -> Option<i64> {
+        match self {
+            IntegerOperation::Add(n) => value.checked_add(*n),
+            IntegerOperation::Subtract(n) => value.checked_sub(*n),
+        }
+    }
+}
+
+impl Integer {
+    fn operation_enum(&self) -> (i64, IntegerOperation) {
+        match self {
+            Integer::Incr => (1, IntegerOperation::Add(1)),
+            Integer::Decr => (-1, IntegerOperation::Subtract(1)),
+            Integer::IncrBy(v) => (*v, IntegerOperation::Add(*v)),
+            Integer::DecrBy(v) => (v.neg(), IntegerOperation::Subtract(*v)),
+        }
+    }
+}
+```
+
+However, after running a [benchmark](./benches/my_benchmark.rs) with [criterion](https://crates.io/crates/criterion), I've noticed there's no real benefit in using enums. I will leave the trait object as it's way easier to read.
 </details>

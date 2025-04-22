@@ -153,4 +153,7 @@ impl Integer {
 ```
 
 However, after running a [benchmark](./benches/my_benchmark.rs) with [criterion](https://crates.io/crates/criterion), I've noticed there's no real benefit in using enums. I will leave the trait object as it's way easier to read.
+
+TODO:
+- evaluate `Cow` with &str as suggested in the Rustikon video
 </details>

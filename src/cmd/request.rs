@@ -1,12 +1,16 @@
+use std::collections::VecDeque;
+
+use indexmap::map::Entry;
+
 use crate::{
     cmd::{
         error::ClientError,
         execution::arithmetic::Integer,
         parser::{arithmetic::Integer as IntegerParser, set::Set as SetParser},
         response::Response,
-        types::{DECR, DECRBY, DEL, ECHO, EXISTS, GET, INCR, INCRBY, PING, SET},
+        types::{DECR, DECRBY, DEL, ECHO, EXISTS, GET, INCR, INCRBY, LPUSH, PING, SET},
     },
-    db::{Db, Object},
+    db::{Db, Object, Value},
 };
 
 #[derive(Debug, PartialEq)]
@@ -21,6 +25,7 @@ pub enum Request {
     Decr(String),
     IncrBy(IntegerParser),
     DecrBy(IntegerParser),
+    LPush(Vec<String>),
 }
 
 impl Request {
@@ -117,6 +122,36 @@ impl Request {
                         |v| Response::Integer(v.to_string())
                     )
             }
+
+            // TODO tests
+            Self::LPush(data) => {
+                if data.len() < 2 {
+                    return Response::SimpleError(ClientError::WrongNumberOfArguments(LPUSH.to_string()).to_string());
+                }
+                let mut map = db.lock().unwrap();
+                match map.entry(data[0].clone()) {
+                    Entry::Vacant(e) => {
+                        let mut l = VecDeque::with_capacity(data.len() - 1);
+                        for d in data.iter().skip(1) {
+                            l.push_front(d.to_string());
+                        }
+                        let list_len = l.len();
+                        e.insert(Object { value: Value::List(l), expiration: None });
+                        Response::Integer(list_len.to_string())
+                    }
+                    Entry::Occupied(mut e) => {
+                        match &mut e.get_mut().value {
+                            Value::List(l) => {
+                                for d in data.iter().skip(1) {
+                                    l.push_front(d.to_string());
+                                }
+                                Response::Integer(l.len().to_string())
+                            }
+                            _ => Response::SimpleError(ClientError::WrongType.to_string())
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -207,6 +242,14 @@ impl TryFrom<Vec<String>> for Request {
                     Err(ClientError::WrongNumberOfArguments(DECRBY.to_string()))
                 } else {
                     Ok(IntegerParser::parse(&params[1..]).map(Request::DecrBy))?
+                }
+            }
+
+            LPUSH => {
+                if params.len() == 1 {
+                    Err(ClientError::WrongNumberOfArguments(LPUSH.to_string()))
+                } else {
+                    Ok(Request::LPush(params[1..].to_owned()))
                 }
             }
 

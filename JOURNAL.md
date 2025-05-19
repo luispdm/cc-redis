@@ -157,3 +157,10 @@ However, after running a [benchmark](./benches/my_benchmark.rs) with [criterion]
 TODO:
 - evaluate `Cow` with &str as suggested in the Rustikon video
 </details>
+
+## 2025-05-19
+<details>
+
+It's been a while. I made some progress with `LPUSH` last time around but didn't push the code. I added the `Clone` implementation to `Value`. As I didn't like it, I tried to avoid unnecessary cloning on the `Value` and I made it. The `LPUSH` command just takes a mutable reference to the entry and, if the contained value is a list (a.k.a. a `VecDeque`), elements are added to it.
+
+</details>

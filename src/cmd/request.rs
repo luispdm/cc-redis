@@ -1,16 +1,14 @@
-use std::collections::VecDeque;
-
-use indexmap::map::Entry;
-
 use crate::{
     cmd::{
         error::ClientError,
-        execution::arithmetic::Integer,
-        parser::{arithmetic::Integer as IntegerParser, set::Set as SetParser},
+        execution::{arithmetic::Integer, list::List},
+        parser::{
+            arithmetic::Integer as IntegerParser, list::List as ListParser, set::Set as SetParser,
+        },
         response::Response,
         types::{DECR, DECRBY, DEL, ECHO, EXISTS, GET, INCR, INCRBY, LPUSH, PING, SET},
     },
-    db::{Db, Object, Value},
+    db::{Db, Object},
 };
 
 #[derive(Debug, PartialEq)]
@@ -25,7 +23,7 @@ pub enum Request {
     Decr(String),
     IncrBy(IntegerParser),
     DecrBy(IntegerParser),
-    LPush(Vec<String>),
+    LPush(ListParser),
 }
 
 impl Request {
@@ -123,39 +121,12 @@ impl Request {
                     )
             }
 
-            // TODO tests
-            Self::LPush(data) => {
-                let mut iter = data.into_iter();
-                let key = iter.next().unwrap();
-                let mut map = db.lock().unwrap();
-                if let Some(o) = map.get(&key) {
-                    if o.is_expired() {
-                        map.swap_remove(&key);
-                    }
-                }
-                match map.entry(key) {
-                    Entry::Vacant(e) => {
-                        let mut l = VecDeque::with_capacity(iter.len());
-                        for d in iter {
-                            l.push_front(d);
-                        }
-                        let list_len = l.len();
-                        e.insert(Object { value: Value::List(l), expiration: None });
-                        Response::Integer(list_len.to_string())
-                    }
-                    Entry::Occupied(mut e) => {
-                        match &mut e.get_mut().value {
-                            Value::List(l) => {
-                                for d in iter {
-                                    l.push_front(d);
-                                }
-                                Response::Integer(l.len().to_string())
-                            }
-                            _ => Response::SimpleError(ClientError::WrongType.to_string())
-                        }
-                    }
-                }
-            }
+            Self::LPush(parser) => List::LPush
+                .execute(db, parser.key, parser.values)
+                .map_or_else(
+                    |e| Response::SimpleError(e.to_string()),
+                    |v| Response::Integer(v.to_string()),
+                ),
         }
     }
 }
@@ -250,10 +221,10 @@ impl TryFrom<Vec<String>> for Request {
             }
 
             LPUSH => {
-                if params.len() < 3 {
+                if params.len() == 1 {
                     Err(ClientError::WrongNumberOfArguments(LPUSH.to_string()))
                 } else {
-                    Ok(Request::LPush(params[1..].to_owned()))
+                    Ok(ListParser::parse(&params[1..]).map(Request::LPush)?)
                 }
             }
 
@@ -835,6 +806,70 @@ mod tests {
             Object::new(Value::String("foo".to_string()), None),
         );
         let cmd = Request::DecrBy(IntegerParser { key: "counter".to_string(), value: 100 });
+        let reply = cmd.execute(&db);
+        assert!(matches!(reply, Response::SimpleError(_)));
+    }
+
+    #[test]
+    fn lpush_no_args() {
+        let params = vec![LPUSH.to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments(LPUSH.to_string())
+        );
+    }
+
+    #[test]
+    fn lpush_only_key() {
+        let params = vec![LPUSH.to_string(), "k".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments(LPUSH.to_string())
+        );
+    }
+
+    #[test]
+    fn lpush_ok() {
+        let params = vec![
+            LPUSH.to_string(),
+            "k".to_string(),
+            "a".to_string(),
+            "b".to_string(),
+        ];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap(),
+            Request::LPush(ListParser {
+                key: "k".to_string(),
+                values: vec!["a".to_string(), "b".to_string()],
+            })
+        );
+    }
+
+    #[test]
+    fn execute_lpush_ok() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        let cmd = Request::LPush(ListParser {
+            key: "k".to_string(),
+            values: vec!["a".to_string(), "b".to_string()],
+        });
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("2".to_string()));
+    }
+
+    #[test]
+    fn execute_lpush_err() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "k".to_string(),
+            Object::new(Value::String("foo".to_string()), None),
+        );
+        let cmd = Request::LPush(ListParser {
+            key: "k".to_string(),
+            values: vec!["v".to_string()],
+        });
         let reply = cmd.execute(&db);
         assert!(matches!(reply, Response::SimpleError(_)));
     }

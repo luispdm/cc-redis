@@ -164,3 +164,13 @@ TODO:
 It's been a while. I made some progress with `LPUSH` last time around but didn't push the code. I added the `Clone` implementation to `Value`. As I didn't like it, I tried to avoid unnecessary cloning on the `Value` and I made it. The `LPUSH` command just takes a mutable reference to the entry and, if the contained value is a list (a.k.a. a `VecDeque`), elements are added to it.
 
 </details>
+
+## 2026-04-27
+<details>
+
+Picked the project back up after almost a year. Reviewed `LPUSH` and found a few gaps: missing expiration check, duplicated argument count validation, unnecessary clones. Fixed those inline, then refactored `LPUSH` into its own parser and execution modules to mirror the arithmetic layout. Tests added across the three files.
+
+TODO:
+- `IntegerParser` hardcodes `INCRBY` in its argument count error. `ListParser` replicated the same shape with `LPUSH`. Parameterize the command name
+
+</details>

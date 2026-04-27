@@ -125,15 +125,19 @@ impl Request {
 
             // TODO tests
             Self::LPush(data) => {
-                if data.len() < 2 {
-                    return Response::SimpleError(ClientError::WrongNumberOfArguments(LPUSH.to_string()).to_string());
-                }
+                let mut iter = data.into_iter();
+                let key = iter.next().unwrap();
                 let mut map = db.lock().unwrap();
-                match map.entry(data[0].clone()) {
+                if let Some(o) = map.get(&key) {
+                    if o.is_expired() {
+                        map.swap_remove(&key);
+                    }
+                }
+                match map.entry(key) {
                     Entry::Vacant(e) => {
-                        let mut l = VecDeque::with_capacity(data.len() - 1);
-                        for d in data.iter().skip(1) {
-                            l.push_front(d.to_string());
+                        let mut l = VecDeque::with_capacity(iter.len());
+                        for d in iter {
+                            l.push_front(d);
                         }
                         let list_len = l.len();
                         e.insert(Object { value: Value::List(l), expiration: None });
@@ -142,8 +146,8 @@ impl Request {
                     Entry::Occupied(mut e) => {
                         match &mut e.get_mut().value {
                             Value::List(l) => {
-                                for d in data.iter().skip(1) {
-                                    l.push_front(d.to_string());
+                                for d in iter {
+                                    l.push_front(d);
                                 }
                                 Response::Integer(l.len().to_string())
                             }
@@ -246,7 +250,7 @@ impl TryFrom<Vec<String>> for Request {
             }
 
             LPUSH => {
-                if params.len() == 1 {
+                if params.len() < 3 {
                     Err(ClientError::WrongNumberOfArguments(LPUSH.to_string()))
                 } else {
                     Ok(Request::LPush(params[1..].to_owned()))

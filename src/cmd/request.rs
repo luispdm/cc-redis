@@ -1,10 +1,12 @@
 use crate::{
     cmd::{
         error::ClientError,
-        execution::arithmetic::Integer,
-        parser::{arithmetic::Integer as IntegerParser, set::Set as SetParser},
+        execution::{arithmetic::Integer, list::List},
+        parser::{
+            arithmetic::Integer as IntegerParser, list::List as ListParser, set::Set as SetParser,
+        },
         response::Response,
-        types::{DECR, DECRBY, DEL, ECHO, EXISTS, GET, INCR, INCRBY, PING, SET},
+        types::{DECR, DECRBY, DEL, ECHO, EXISTS, GET, INCR, INCRBY, LPUSH, PING, SET},
     },
     db::{Db, Object},
 };
@@ -21,6 +23,7 @@ pub enum Request {
     Decr(String),
     IncrBy(IntegerParser),
     DecrBy(IntegerParser),
+    LPush(ListParser),
 }
 
 impl Request {
@@ -117,6 +120,13 @@ impl Request {
                         |v| Response::Integer(v.to_string())
                     )
             }
+
+            Self::LPush(parser) => List::LPush
+                .execute(db, parser.key, parser.values)
+                .map_or_else(
+                    |e| Response::SimpleError(e.to_string()),
+                    |v| Response::Integer(v.to_string()),
+                ),
         }
     }
 }
@@ -207,6 +217,14 @@ impl TryFrom<Vec<String>> for Request {
                     Err(ClientError::WrongNumberOfArguments(DECRBY.to_string()))
                 } else {
                     Ok(IntegerParser::parse(&params[1..]).map(Request::DecrBy))?
+                }
+            }
+
+            LPUSH => {
+                if params.len() == 1 {
+                    Err(ClientError::WrongNumberOfArguments(LPUSH.to_string()))
+                } else {
+                    Ok(ListParser::parse(&params[1..]).map(Request::LPush)?)
                 }
             }
 
@@ -788,6 +806,70 @@ mod tests {
             Object::new(Value::String("foo".to_string()), None),
         );
         let cmd = Request::DecrBy(IntegerParser { key: "counter".to_string(), value: 100 });
+        let reply = cmd.execute(&db);
+        assert!(matches!(reply, Response::SimpleError(_)));
+    }
+
+    #[test]
+    fn lpush_no_args() {
+        let params = vec![LPUSH.to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments(LPUSH.to_string())
+        );
+    }
+
+    #[test]
+    fn lpush_only_key() {
+        let params = vec![LPUSH.to_string(), "k".to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments(LPUSH.to_string())
+        );
+    }
+
+    #[test]
+    fn lpush_ok() {
+        let params = vec![
+            LPUSH.to_string(),
+            "k".to_string(),
+            "a".to_string(),
+            "b".to_string(),
+        ];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap(),
+            Request::LPush(ListParser {
+                key: "k".to_string(),
+                values: vec!["a".to_string(), "b".to_string()],
+            })
+        );
+    }
+
+    #[test]
+    fn execute_lpush_ok() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        let cmd = Request::LPush(ListParser {
+            key: "k".to_string(),
+            values: vec!["a".to_string(), "b".to_string()],
+        });
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("2".to_string()));
+    }
+
+    #[test]
+    fn execute_lpush_err() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "k".to_string(),
+            Object::new(Value::String("foo".to_string()), None),
+        );
+        let cmd = Request::LPush(ListParser {
+            key: "k".to_string(),
+            values: vec!["v".to_string()],
+        });
         let reply = cmd.execute(&db);
         assert!(matches!(reply, Response::SimpleError(_)));
     }

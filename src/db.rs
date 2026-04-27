@@ -1,7 +1,5 @@
 use std::{
-    fmt::Display,
-    sync::{Arc, Mutex},
-    time::SystemTime,
+    collections::VecDeque, fmt::Display, sync::{Arc, Mutex}, time::SystemTime
 };
 
 use indexmap::IndexMap;
@@ -12,6 +10,7 @@ use rand::{rng, seq::index::sample};
 pub enum Value {
     Integer(i64),
     String(String),
+    List(VecDeque<String>),
 }
 
 impl Display for Value {
@@ -19,6 +18,7 @@ impl Display for Value {
         match self {
             Value::Integer(i) => write!(f, "{}", i),
             Value::String(s) => write!(f, "{}", s),
+            Value::List(l) => write!(f, "{:?}", l),
         }
     }
 }

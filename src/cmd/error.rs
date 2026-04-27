@@ -12,4 +12,6 @@ pub enum ClientError {
     IntegerError,
     #[error("increment or decrement would overflow")]
     OverflowError,
+    #[error("operation against a key holding the wrong kind of value")]
+    WrongType,
 }

@@ -7,8 +7,11 @@ use crate::{
     db::{Db, Object, Value},
 };
 
+type PushOp = Box<dyn Fn(&mut VecDeque<String>, String)>;
+
 pub enum List {
     LPush,
+    RPush,
 }
 
 impl List {
@@ -44,9 +47,10 @@ impl List {
         }
     }
 
-    pub fn operation(&self) -> Box<dyn Fn(&mut VecDeque<String>, String)> {
+    pub fn operation(&self) -> PushOp {
         match self {
             List::LPush => Box::new(|l, v| l.push_front(v)),
+            List::RPush => Box::new(|l, v| l.push_back(v)),
         }
     }
 }
@@ -147,6 +151,82 @@ mod tests {
     fn lpush_empty_string_element() {
         let db = empty_db();
         let result = List::LPush.execute(&db, "k".into(), vec!["".into()]);
+        assert_eq!(result, Ok(1));
+        assert_list(&db, "k", &[""]);
+    }
+
+    #[test]
+    fn rpush_new_key_single() {
+        let db = empty_db();
+        let result = List::RPush.execute(&db, "k".into(), vec!["v".into()]);
+        assert_eq!(result, Ok(1));
+        assert_list(&db, "k", &["v"]);
+    }
+
+    #[test]
+    fn rpush_new_key_multiple() {
+        let db = empty_db();
+        let result = List::RPush.execute(
+            &db,
+            "k".into(),
+            vec!["a".into(), "b".into(), "c".into()],
+        );
+        assert_eq!(result, Ok(3));
+        assert_list(&db, "k", &["a", "b", "c"]);
+    }
+
+    #[test]
+    fn rpush_existing_list() {
+        let db = empty_db();
+        db.lock().unwrap().insert(
+            "k".into(),
+            Object::new(Value::List(VecDeque::from(vec!["x".to_string()])), None),
+        );
+        let result = List::RPush.execute(&db, "k".into(), vec!["a".into(), "b".into()]);
+        assert_eq!(result, Ok(3));
+        assert_list(&db, "k", &["x", "a", "b"]);
+    }
+
+    #[test]
+    fn rpush_wrong_type_string() {
+        let db = empty_db();
+        db.lock().unwrap().insert(
+            "k".into(),
+            Object::new(Value::String("foo".into()), None),
+        );
+        let result = List::RPush.execute(&db, "k".into(), vec!["v".into()]);
+        assert_eq!(result, Err(ClientError::WrongType));
+    }
+
+    #[test]
+    fn rpush_wrong_type_integer() {
+        let db = empty_db();
+        db.lock()
+            .unwrap()
+            .insert("k".into(), Object::new(Value::Integer(5), None));
+        let result = List::RPush.execute(&db, "k".into(), vec!["v".into()]);
+        assert_eq!(result, Err(ClientError::WrongType));
+    }
+
+    #[test]
+    fn rpush_expired_key() {
+        let db = empty_db();
+        db.lock().unwrap().insert(
+            "k".into(),
+            Object::new(
+                Value::List(VecDeque::from(vec!["old".to_string()])),
+                Some(SystemTime::now() - Duration::from_secs(10)),
+            ),
+        );
+        let result = List::RPush.execute(&db, "k".into(), vec!["new".into()]);
+        assert_eq!(result, Ok(1));
+        assert_list(&db, "k", &["new"]);
+    }
+
+    #[test]
+    fn rpush_empty_string_element() {
+        let db = empty_db();
+        let result = List::RPush.execute(&db, "k".into(), vec!["".into()]);
         assert_eq!(result, Ok(1));
         assert_list(&db, "k", &[""]);
     }

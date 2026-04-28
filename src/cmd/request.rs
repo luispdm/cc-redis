@@ -6,7 +6,7 @@ use crate::{
             arithmetic::Integer as IntegerParser, list::List as ListParser, set::Set as SetParser,
         },
         response::Response,
-        types::{DECR, DECRBY, DEL, ECHO, EXISTS, GET, INCR, INCRBY, LPUSH, PING, SET},
+        types::{DECR, DECRBY, DEL, ECHO, EXISTS, GET, INCR, INCRBY, LPUSH, PING, RPUSH, SET},
     },
     db::{Db, Object},
 };
@@ -24,6 +24,7 @@ pub enum Request {
     IncrBy(IntegerParser),
     DecrBy(IntegerParser),
     LPush(ListParser),
+    RPush(ListParser),
 }
 
 impl Request {
@@ -127,6 +128,13 @@ impl Request {
                     |e| Response::SimpleError(e.to_string()),
                     |v| Response::Integer(v.to_string()),
                 ),
+
+            Self::RPush(parser) => List::RPush
+                .execute(db, parser.key, parser.values)
+                .map_or_else(
+                    |e| Response::SimpleError(e.to_string()),
+                    |v| Response::Integer(v.to_string()),
+                ),
         }
     }
 }
@@ -225,6 +233,14 @@ impl TryFrom<Vec<String>> for Request {
                     Err(ClientError::WrongNumberOfArguments(LPUSH.to_string()))
                 } else {
                     Ok(ListParser::parse(&params[1..]).map(Request::LPush)?)
+                }
+            }
+
+            RPUSH => {
+                if params.len() == 1 {
+                    Err(ClientError::WrongNumberOfArguments(RPUSH.to_string()))
+                } else {
+                    Ok(ListParser::parse(&params[1..]).map(Request::RPush)?)
                 }
             }
 
@@ -867,6 +883,60 @@ mod tests {
             Object::new(Value::String("foo".to_string()), None),
         );
         let cmd = Request::LPush(ListParser {
+            key: "k".to_string(),
+            values: vec!["v".to_string()],
+        });
+        let reply = cmd.execute(&db);
+        assert!(matches!(reply, Response::SimpleError(_)));
+    }
+
+    #[test]
+    fn rpush_no_args() {
+        let params = vec![RPUSH.to_string()];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap_err(),
+            ClientError::WrongNumberOfArguments(RPUSH.to_string())
+        );
+    }
+
+    #[test]
+    fn rpush_ok() {
+        let params = vec![
+            RPUSH.to_string(),
+            "k".to_string(),
+            "a".to_string(),
+            "b".to_string(),
+        ];
+        let cmd = Request::try_from(params);
+        assert_eq!(
+            cmd.unwrap(),
+            Request::RPush(ListParser {
+                key: "k".to_string(),
+                values: vec!["a".to_string(), "b".to_string()],
+            })
+        );
+    }
+
+    #[test]
+    fn execute_rpush_ok() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        let cmd = Request::RPush(ListParser {
+            key: "k".to_string(),
+            values: vec!["a".to_string(), "b".to_string()],
+        });
+        let reply = cmd.execute(&db);
+        assert_eq!(reply, Response::Integer("2".to_string()));
+    }
+
+    #[test]
+    fn execute_rpush_err() {
+        let db = Db::new(Mutex::new(IndexMap::new()));
+        db.lock().unwrap().insert(
+            "k".to_string(),
+            Object::new(Value::String("foo".to_string()), None),
+        );
+        let cmd = Request::RPush(ListParser {
             key: "k".to_string(),
             values: vec!["v".to_string()],
         });

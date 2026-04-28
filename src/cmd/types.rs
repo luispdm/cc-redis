@@ -9,3 +9,4 @@ pub const DECR: &str = "decr";
 pub const INCRBY: &str = "incrby";
 pub const DECRBY: &str = "decrby";
 pub const LPUSH: &str = "lpush";
+pub const RPUSH: &str = "rpush";
